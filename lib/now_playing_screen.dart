@@ -12,6 +12,17 @@ import './controllers/player_controller.dart';
 class NowPlayingScreen extends StatelessWidget {
   const NowPlayingScreen({super.key});
 
+  // ADDED For thumbnail creation
+  String _resizeGoogleThumb(String url, String size) {
+  if (url.isEmpty) return url;
+
+  return url.replaceAll(
+    RegExp(r'=w\d+-h\d+-l\d+-rj'),
+    size,
+  );
+}
+  // ENded here
+
   @override
   Widget build(BuildContext context) {
     final pc = Get.find<PlayerController>();
@@ -59,7 +70,12 @@ class NowPlayingScreen extends StatelessWidget {
             // ── Artwork with red ring ────────────────────────────────────
             Obx(() {
               final song = pc.currentSong.value;
-              final artUrl = song?.artUri?.toString() ?? '';
+              final originalUrl = song?.artUri?.toString() ?? '';
+              final artUrl = _resizeGoogleThumb(
+                originalUrl,
+                "=w600-h600-l90-rj", // Full screen size
+              );
+              //final artUrl = song?.artUri?.toString() ?? '';
               final isPlaying = pc.buttonState.value == PlayButtonState.playing;
 
               return Stack(
