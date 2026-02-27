@@ -1,4 +1,7 @@
 // ui/player_screen.dart
+// UI redesigned to match the reference — dark background, large "MUSIC" header,
+// song list with thumbnail + title + artist + duration, mini player bar at bottom.
+
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -7,6 +10,7 @@ import 'package:google_fonts/google_fonts.dart';
 import './controllers/player_controller.dart';
 import './controllers/search_controller.dart';
 import './services/search_service.dart';
+import 'now_playing_screen.dart';
 
 class PlayerScreen extends StatefulWidget {
   const PlayerScreen({super.key});
@@ -14,26 +18,20 @@ class PlayerScreen extends StatefulWidget {
   State<PlayerScreen> createState() => _PlayerScreenState();
 }
 
-class _PlayerScreenState extends State<PlayerScreen>
-    with SingleTickerProviderStateMixin {
+class _PlayerScreenState extends State<PlayerScreen> {
   final PlayerController _pc = Get.find();
   final SongSearchController _sc = Get.put(SongSearchController());
 
-  // Search bar controller
   final _searchController = TextEditingController();
   final _searchFocus = FocusNode();
   bool _searchOpen = false;
 
-  // Manual ID input
-  final _idController = TextEditingController();
-  final _titleController = TextEditingController();
-
-  // ── Search helpers ───────────────────────────────────────────────────────
+  // ── Search helpers ────────────────────────────────────────────────────────
 
   void _openSearch() {
     setState(() => _searchOpen = true);
-    Future.delayed(const Duration(milliseconds: 80),
-        () => _searchFocus.requestFocus());
+    Future.delayed(
+        const Duration(milliseconds: 80), () => _searchFocus.requestFocus());
   }
 
   void _closeSearch() {
@@ -43,71 +41,61 @@ class _PlayerScreenState extends State<PlayerScreen>
     setState(() => _searchOpen = false);
   }
 
-  void _onSearchChanged(String v) => _sc.onQueryChanged(v);
-
-  void _playResult(SearchResult result) {
-    _pc.playVideoId(result.videoId, title: result.title, artist: result.artistLine, thumbnail: result.thumbnail);
+  void _playResult(SearchResult r) {
+    _pc.playVideoId(
+      r.videoId,
+      title: r.title,
+      artist: r.artistLine,
+      thumbnail: r.thumbnail,
+      duration: r.durationValue,
+    );
     _closeSearch();
   }
 
-  void _queueResult(SearchResult result) {
-    _pc.addToQueue(result.videoId, title: result.title, artist: result.artistLine, thumbnail: result.thumbnail);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Added: ${result.title}',
-            style: GoogleFonts.spaceMono(fontSize: 11)),
-        duration: const Duration(seconds: 1),
-        backgroundColor: const Color(0xFF1A1A1A),
-      ),
+  void _queueResult(SearchResult r) {
+    _pc.addToQueue(
+      r.videoId,
+      title: r.title,
+      artist: r.artistLine,
+      thumbnail: r.thumbnail,
+      duration: r.durationValue,
     );
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text('Added: ${r.title}',
+          style: GoogleFonts.inter(fontSize: 12)),
+      duration: const Duration(seconds: 1),
+      backgroundColor: const Color(0xFF1C1C1C),
+    ));
   }
 
-  // ── Manual ID load ────────────────────────────────────────────────────────
-
-  void _onLoad() {
-    final id = _idController.text.trim();
-    if (id.isEmpty) return;
-    _pc.playVideoId(id,
-        title: _titleController.text.trim().isEmpty
-            ? id
-            : _titleController.text.trim());
-    _idController.clear();
-    _titleController.clear();
-    FocusScope.of(context).unfocus();
-  }
-
-  void _onAddToQueue() {
-    final id = _idController.text.trim();
-    if (id.isEmpty) return;
-    _pc.addToQueue(id,
-        title: _titleController.text.trim().isEmpty
-            ? id
-            : _titleController.text.trim());
-    _idController.clear();
-    _titleController.clear();
-    FocusScope.of(context).unfocus();
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-          content: Text('Added to queue'),
-          duration: Duration(seconds: 1)),
-    );
-  }
-
-  // ─────────────────────────────────────────────────────────────────────────
-  // Build
-  // ─────────────────────────────────────────────────────────────────────────
+  // ── Build ─────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0F0F0F),
+      backgroundColor: Colors.black,
       body: SafeArea(
-        child: Column(
+        child: Stack(
           children: [
-            _buildHeader(),
-            // Search results overlay OR normal content
-            Expanded(
-              child: _searchOpen ? _buildSearchOverlay() : _buildMainContent(),
+            // Main content
+            Column(
+              children: [
+                _buildTopBar(),
+                Expanded(
+                  child: _searchOpen
+                      ? _buildSearchBody()
+                      : _buildSongListBody(),
+                ),
+                // Space for mini player
+                const SizedBox(height: 72),
+              ],
+            ),
+            // Mini player pinned to bottom
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: _buildMiniPlayer(),
             ),
           ],
         ),
@@ -115,275 +103,354 @@ class _PlayerScreenState extends State<PlayerScreen>
     );
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // Header
-  // ─────────────────────────────────────────────────────────────────────────
+  // ── Top bar ───────────────────────────────────────────────────────────────
 
-  Widget _buildHeader() {
-    return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 200),
-      child: _searchOpen ? _buildSearchBar() : _buildNormalHeader(),
+  Widget _buildTopBar() {
+    if (_searchOpen) {
+      return Container(
+        color: Colors.black,
+        padding: const EdgeInsets.fromLTRB(8, 12, 16, 8),
+        child: Row(
+          children: [
+            IconButton(
+              onPressed: _closeSearch,
+              icon: const Icon(Icons.arrow_back_rounded,
+                  color: Colors.white, size: 22),
+            ),
+            Expanded(
+              child: TextField(
+                controller: _searchController,
+                focusNode: _searchFocus,
+                onChanged: _sc.onQueryChanged,
+                style: GoogleFonts.inter(color: Colors.white, fontSize: 16),
+                decoration: InputDecoration(
+                  hintText: 'Search songs...',
+                  hintStyle: GoogleFonts.inter(
+                      color: Colors.grey.shade600, fontSize: 16),
+                  border: InputBorder.none,
+                  isDense: true,
+                ),
+              ),
+            ),
+            Obx(() => _sc.isLoading.value
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: Colors.white),
+                  )
+                : _sc.query.value.isNotEmpty
+                    ? GestureDetector(
+                        onTap: () {
+                          _searchController.clear();
+                          _sc.clear();
+                        },
+                        child: const Icon(Icons.close_rounded,
+                            color: Colors.grey, size: 20),
+                      )
+                    : const SizedBox(width: 20)),
+          ],
+        ),
+      );
+    }
+
+    // Normal header — big "MUSIC" title + search icon
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Text(
+            'MUSIC',
+            style: GoogleFonts.inter(
+              fontSize: 36,
+              fontWeight: FontWeight.w900,
+              color: Colors.white,
+              letterSpacing: -0.5,
+            ),
+          ),
+          const Spacer(),
+          GestureDetector(
+            onTap: _openSearch,
+            child: Icon(Icons.search_rounded,
+                color: Colors.grey.shade500, size: 26),
+          ),
+        ],
+      ),
     );
   }
 
-  Widget _buildNormalHeader() {
-    return Container(
-      key: const ValueKey('normal-header'),
-      padding: const EdgeInsets.fromLTRB(20, 14, 12, 12),
-      decoration: const BoxDecoration(
-        color: Color(0xFF1A1A1A),
-        border: Border(bottom: BorderSide(color: Color(0xFF2A2A2A))),
-      ),
-      child: Row(
+  // ── Song list ─────────────────────────────────────────────────────────────
+
+  Widget _buildSongListBody() {
+    return StreamBuilder<List<MediaItem>>(
+      stream: _pc.audioHandler.queue,
+      builder: (context, snap) {
+        final queue = snap.data ?? [];
+        if (queue.isEmpty) return _emptyQueueState();
+        return Column(
+          children: [
+            const Divider(color: Color(0xFF2A2A2A), height: 1, thickness: 1),
+            Expanded(
+              child: ListView.separated(
+                padding: EdgeInsets.zero,
+                itemCount: queue.length,
+                separatorBuilder: (_, __) =>
+                    const Divider(
+                        color: Color(0xFF1A1A1A), height: 1, indent: 76),
+                itemBuilder: (_, i) {
+                  final item = queue[i];
+                  final isCurrent = _pc.currentSong.value?.id == item.id;
+                  return _buildSongRow(item, i, isCurrent);
+                },
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _emptyQueueState() {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.music_note_rounded,
-              color: Color(0xFFFF0000), size: 24),
-          const SizedBox(width: 10),
-          Text('YT Audio Player',
-              style: GoogleFonts.rajdhani(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.white,
-                  letterSpacing: 1.5)),
-          const Spacer(),
-          // Search icon
-          IconButton(
-            onPressed: _openSearch,
-            icon: const Icon(Icons.search_rounded,
-                color: Colors.grey, size: 22),
-            tooltip: 'Search',
-          ),
-          // Quality toggle
-          Obx(() => GestureDetector(
-                onTap: _pc.toggleQuality,
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF2A2A2A),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: const Color(0xFF3A3A3A)),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
+          Icon(Icons.queue_music_rounded,
+              size: 64, color: Colors.grey.shade800),
+          const SizedBox(height: 16),
+          Text('No songs yet',
+              style: GoogleFonts.inter(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.grey.shade700)),
+          const SizedBox(height: 8),
+          Text('Tap  🔍  to search and add songs',
+              style: GoogleFonts.inter(
+                  fontSize: 13, color: Colors.grey.shade700)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSongRow(MediaItem item, int index, bool isCurrent) {
+    final artUrl = item.artUri?.toString() ?? '';
+    final dur = item.duration;
+    final durStr = dur != null ? _fmt(dur) : '';
+
+    return GestureDetector(
+      onTap: () => _pc.audioHandler.skipToQueueItem(index),
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        color: Colors.transparent,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          children: [
+            // Thumbnail
+            ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: artUrl.isNotEmpty
+                  ? Image.network(
+                      artUrl,
+                      width: 48,
+                      height: 48,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => _thumbPlaceholder(),
+                    )
+                  : _thumbPlaceholder(),
+            ),
+            const SizedBox(width: 14),
+
+            // Title + artist
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
                     children: [
-                      Icon(Icons.hd_rounded,
-                          size: 15,
-                          color: _pc.isHighQuality.value
-                              ? const Color(0xFFFF0000)
-                              : Colors.grey),
-                      const SizedBox(width: 4),
-                      Text(
-                        _pc.isHighQuality.value ? 'HQ' : 'LQ',
-                        style: GoogleFonts.spaceMono(
-                            fontSize: 10,
-                            color: _pc.isHighQuality.value
-                                ? const Color(0xFFFF0000)
-                                : Colors.grey),
+                      // Red dot for currently playing
+                      if (isCurrent) ...[
+                        Container(
+                          width: 7,
+                          height: 7,
+                          margin: const EdgeInsets.only(right: 6),
+                          decoration: const BoxDecoration(
+                            color: Color(0xFFFF3B30),
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                      ],
+                      Expanded(
+                        child: Text(
+                          item.title.toUpperCase(),
+                          style: GoogleFonts.inter(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                            letterSpacing: 0.3,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
                     ],
                   ),
-                ),
-              )),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSearchBar() {
-    return Container(
-      key: const ValueKey('search-header'),
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-      decoration: const BoxDecoration(
-        color: Color(0xFF1A1A1A),
-        border: Border(bottom: BorderSide(color: Color(0xFF2A2A2A))),
-      ),
-      child: Row(
-        children: [
-          IconButton(
-            onPressed: _closeSearch,
-            icon:
-                const Icon(Icons.arrow_back_rounded, color: Colors.grey, size: 22),
-          ),
-          Expanded(
-            child: TextField(
-              controller: _searchController,
-              focusNode: _searchFocus,
-              onChanged: _onSearchChanged,
-              style: GoogleFonts.spaceMono(color: Colors.white, fontSize: 13),
-              decoration: InputDecoration(
-                hintText: 'Search songs...',
-                hintStyle: GoogleFonts.spaceMono(
-                    color: Colors.grey.shade700, fontSize: 12),
-                border: InputBorder.none,
-                isDense: true,
-                contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                  const SizedBox(height: 3),
+                  Text(
+                    (item.artist ?? '').toUpperCase(),
+                    style: GoogleFonts.inter(
+                      fontSize: 11,
+                      color: Colors.grey.shade500,
+                      fontWeight: FontWeight.w500,
+                      letterSpacing: 0.3,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
               ),
-              textInputAction: TextInputAction.search,
             ),
-          ),
-          Obx(() => _sc.isLoading.value
-              ? const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(
-                      strokeWidth: 2, color: Color(0xFFFF0000)),
-                )
-              : _sc.query.value.isNotEmpty
-                  ? GestureDetector(
-                      onTap: () {
-                        _searchController.clear();
-                        _sc.clear();
-                      },
-                      child: const Icon(Icons.close_rounded,
-                          color: Colors.grey, size: 18),
-                    )
-                  : const SizedBox(width: 18)),
-          const SizedBox(width: 8),
-        ],
+
+            // Duration
+            if (durStr.isNotEmpty) ...[
+              const SizedBox(width: 8),
+              Text(
+                durStr,
+                style: GoogleFonts.inter(
+                    fontSize: 12,
+                    color: Colors.grey.shade500,
+                    fontWeight: FontWeight.w400),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // Search overlay
-  // ─────────────────────────────────────────────────────────────────────────
+  Widget _thumbPlaceholder() => Container(
+        width: 48,
+        height: 48,
+        decoration: BoxDecoration(
+          color: const Color(0xFF1C1C1C),
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Icon(Icons.music_note_rounded,
+            size: 22, color: Colors.grey.shade700),
+      );
 
-  Widget _buildSearchOverlay() {
+  // ── Search body ───────────────────────────────────────────────────────────
+
+  Widget _buildSearchBody() {
     return Obx(() {
       final results = _sc.results;
       final loading = _sc.isLoading.value;
       final q = _sc.query.value;
 
       if (q.isEmpty) {
-        return _searchEmptyState();
+        return Center(
+          child: Text('Type to search songs',
+              style: GoogleFonts.inter(
+                  fontSize: 14, color: Colors.grey.shade600)),
+        );
       }
       if (loading && results.isEmpty) {
         return const Center(
-          child: CircularProgressIndicator(color: Color(0xFFFF0000)),
-        );
+            child:
+                CircularProgressIndicator(color: Colors.white, strokeWidth: 2));
       }
       if (!loading && results.isEmpty) {
-        return _noResultsState(q);
+        return Center(
+          child: Text('No results for "$q"',
+              style: GoogleFonts.inter(
+                  fontSize: 14, color: Colors.grey.shade600)),
+        );
       }
 
       return ListView.separated(
-        padding: const EdgeInsets.symmetric(vertical: 8),
+        padding: const EdgeInsets.only(top: 4),
         itemCount: results.length,
         separatorBuilder: (_, __) =>
-            const Divider(color: Color(0xFF1F1F1F), height: 1),
-        itemBuilder: (_, i) => _buildResultTile(results[i]),
+            const Divider(color: Color(0xFF1A1A1A), height: 1, indent: 76),
+        itemBuilder: (_, i) => _buildSearchTile(results[i]),
       );
     });
   }
 
-  Widget _searchEmptyState() {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.search_rounded, size: 56, color: Colors.grey.shade800),
-          const SizedBox(height: 12),
-          Text('Type to search songs',
-              style: GoogleFonts.spaceMono(
-                  fontSize: 12, color: Colors.grey.shade700)),
-        ],
-      ),
-    );
-  }
-
-  Widget _noResultsState(String q) {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.music_off_rounded, size: 56, color: Colors.grey.shade800),
-          const SizedBox(height: 12),
-          Text('No results for "$q"',
-              style: GoogleFonts.spaceMono(
-                  fontSize: 12, color: Colors.grey.shade700)),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildResultTile(SearchResult result) {
-    return InkWell(
-      onTap: () => _playResult(result),
-      splashColor: const Color(0xFFFF0000).withOpacity(0.08),
+  Widget _buildSearchTile(SearchResult r) {
+    return GestureDetector(
+      onTap: () => _playResult(r),
+      behavior: HitTestBehavior.opaque,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         child: Row(
           children: [
             // Thumbnail
             ClipRRect(
               borderRadius: BorderRadius.circular(6),
-              child: Image.network(
-                result.thumbnail,
-                width: 52,
-                height: 52,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => Container(
-                  width: 52,
-                  height: 52,
-                  color: const Color(0xFF2A2A2A),
-                  child: const Icon(Icons.music_note_rounded,
-                      color: Colors.grey, size: 22),
-                ),
-              ),
+              child: r.thumbnail.isNotEmpty
+                  ? Image.network(
+                      r.thumbnail,
+                      width: 48,
+                      height: 48,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => _thumbPlaceholder(),
+                    )
+                  : _thumbPlaceholder(),
             ),
-            const SizedBox(width: 12),
-            // Title + artists
+            const SizedBox(width: 14),
+
+            // Title + artist
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    result.title,
-                    style: GoogleFonts.rajdhani(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.white),
+                    r.title.toUpperCase(),
+                    style: GoogleFonts.inter(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
+                      letterSpacing: 0.3,
+                    ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  const SizedBox(height: 2),
+                  const SizedBox(height: 3),
                   Text(
-                    result.artistLine,
-                    style: GoogleFonts.spaceMono(
-                        fontSize: 10, color: Colors.grey.shade500),
+                    r.artistLine.toUpperCase(),
+                    style: GoogleFonts.inter(
+                      fontSize: 11,
+                      color: Colors.grey.shade500,
+                      fontWeight: FontWeight.w500,
+                    ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
                 ],
               ),
             ),
-            const SizedBox(width: 8),
-            // Add to queue button
-            GestureDetector(
-              onTap: () => _queueResult(result),
-              child: Container(
-                padding: const EdgeInsets.all(7),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF2A2A2A),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(Icons.add_rounded,
-                    color: Colors.grey, size: 18),
+
+            // Duration
+            if (r.duration.isNotEmpty) ...[
+              const SizedBox(width: 8),
+              Text(
+                r.duration,
+                style: GoogleFonts.inter(
+                    fontSize: 12,
+                    color: Colors.grey.shade500,
+                    fontWeight: FontWeight.w400),
               ),
-            ),
-            const SizedBox(width: 6),
-            // Play button
+            ],
+            const SizedBox(width: 8),
+
+            // Add to queue
             GestureDetector(
-              onTap: () => _playResult(result),
-              child: Container(
-                padding: const EdgeInsets.all(7),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFF0000).withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(Icons.play_arrow_rounded,
-                    color: Color(0xFFFF0000), size: 18),
+              onTap: () => _queueResult(r),
+              child: Padding(
+                padding: const EdgeInsets.all(6),
+                child: Icon(Icons.add_rounded,
+                    color: Colors.grey.shade600, size: 20),
               ),
             ),
           ],
@@ -392,519 +459,159 @@ class _PlayerScreenState extends State<PlayerScreen>
     );
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // Main content (player + manual input + queue)
-  // ─────────────────────────────────────────────────────────────────────────
+  // ── Mini player bar ───────────────────────────────────────────────────────
 
-  Widget _buildMainContent() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Column(
-        children: [
-          const SizedBox(height: 12),
-          _buildInputCard(),
-          const SizedBox(height: 16),
-          _buildPlayerCard(),
-          const SizedBox(height: 16),
-          _buildQueueSection(),
-          const SizedBox(height: 32),
-        ],
-      ),
-    );
-  }
-
-  // ─────────────────────────────────────────────────────────────────────────
-  // Input card (manual ID)
-  // ─────────────────────────────────────────────────────────────────────────
-
-  Widget _buildInputCard() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1A1A1A),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFF2A2A2A)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('MANUAL ID',
-              style: GoogleFonts.spaceMono(
-                  fontSize: 10, color: Colors.grey, letterSpacing: 2)),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _idController,
-            style: GoogleFonts.spaceMono(color: Colors.white, fontSize: 13),
-            decoration: _inputDeco(
-                'YouTube Video ID  e.g. dQw4w9WgXcQ', Icons.link_rounded),
-            onSubmitted: (_) => _onLoad(),
-          ),
-          const SizedBox(height: 8),
-          TextField(
-            controller: _titleController,
-            style: GoogleFonts.spaceMono(color: Colors.white, fontSize: 13),
-            decoration:
-                _inputDeco('Song title (optional)', Icons.title_rounded),
-            onSubmitted: (_) => _onLoad(),
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: FilledButton.icon(
-                  onPressed: _onLoad,
-                  icon: const Icon(Icons.play_arrow_rounded, size: 18),
-                  label: Text('PLAY NOW',
-                      style: GoogleFonts.spaceMono(
-                          fontSize: 11, letterSpacing: 1)),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: const Color(0xFFFF0000),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8)),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _onAddToQueue,
-                  icon: const Icon(Icons.queue_music_rounded, size: 18),
-                  label: Text('+ QUEUE',
-                      style: GoogleFonts.spaceMono(
-                          fontSize: 11, letterSpacing: 1)),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.white,
-                    side: const BorderSide(color: Color(0xFF3A3A3A)),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8)),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  InputDecoration _inputDeco(String hint, IconData icon) => InputDecoration(
-        hintText: hint,
-        hintStyle:
-            GoogleFonts.spaceMono(color: Colors.grey.shade700, fontSize: 11),
-        prefixIcon: Icon(icon, color: Colors.grey.shade600, size: 18),
-        filled: true,
-        fillColor: const Color(0xFF0F0F0F),
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: Color(0xFF2A2A2A)),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: Color(0xFF2A2A2A)),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: Color(0xFFFF0000)),
-        ),
-      );
-
-  // ─────────────────────────────────────────────────────────────────────────
-  // Player card
-  // ─────────────────────────────────────────────────────────────────────────
-
-  Widget _buildPlayerCard() {
+  Widget _buildMiniPlayer() {
     return Obx(() {
       final song = _pc.currentSong.value;
-      final error = _pc.errorMessage.value;
-      return Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: const Color(0xFF1A1A1A),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: const Color(0xFF2A2A2A)),
-        ),
-        child: Column(
-          children: [
-            _buildArtwork(song),
-            const SizedBox(height: 16),
-            if (error != null) _buildError(error),
-            Text(
-              song?.title ?? 'No song loaded',
-              style: GoogleFonts.rajdhani(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.white),
-              textAlign: TextAlign.center,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-            const SizedBox(height: 2),
-            Text(
-              song?.artist ?? '--',
-              style: GoogleFonts.spaceMono(
-                  fontSize: 10, color: Colors.grey.shade500),
-              textAlign: TextAlign.center,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            const SizedBox(height: 20),
-            _buildProgressBar(),
-            const SizedBox(height: 20),
-            _buildControls(),
-          ],
-        ),
-      );
-    });
-  }
+      final state = _pc.buttonState.value;
+      final progress = _pc.progressBarState.value;
 
-  Widget _buildArtwork(MediaItem? song) {
-    final artUrl = song?.artUri?.toString();
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(8),
-      child: Container(
-        width: double.infinity,
-        height: 175,
-        color: const Color(0xFF0F0F0F),
-        child: artUrl != null && artUrl.isNotEmpty
-            ? Image.network(artUrl, fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => _thumbPlaceholder())
-            : _thumbPlaceholder(),
-      ),
-    );
-  }
-
-  Widget _thumbPlaceholder() => Center(
-        child: Icon(Icons.music_note_rounded,
-            size: 64, color: Colors.grey.shade800),
-      );
-
-  Widget _buildError(String msg) => Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: Colors.red.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: Colors.red.withOpacity(0.3)),
-        ),
-        child: Row(
-          children: [
-            const Icon(Icons.error_outline, color: Colors.red, size: 16),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(msg,
-                  style:
-                      GoogleFonts.spaceMono(fontSize: 11, color: Colors.red)),
-            ),
-          ],
-        ),
-      );
-
-  Widget _buildProgressBar() {
-    return Obx(() {
-      final state = _pc.progressBarState.value;
-      final total = state.total.inSeconds.toDouble();
-      final current = state.current.inSeconds.toDouble();
-      final buffered = state.buffered.inSeconds.toDouble();
+      final total = progress.total.inMilliseconds.toDouble();
+      final current = progress.current.inMilliseconds.toDouble();
+      final fraction = total > 0 ? (current / total).clamp(0.0, 1.0) : 0.0;
 
       return Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Stack(
-            children: [
-              SliderTheme(
-                data: SliderThemeData(
-                  trackHeight: 3,
-                  thumbShape: SliderComponentShape.noThumb,
-                  overlayShape: SliderComponentShape.noOverlay,
-                  activeTrackColor: Colors.grey.shade700,
-                  inactiveTrackColor: Colors.grey.shade800,
-                ),
-                child: Slider(
-                  value: total > 0 ? buffered.clamp(0, total) : 0,
-                  min: 0,
-                  max: total > 0 ? total : 1,
-                  onChanged: null,
-                ),
-              ),
-              SliderTheme(
-                data: SliderThemeData(
-                  trackHeight: 3,
-                  thumbShape:
-                      const RoundSliderThumbShape(enabledThumbRadius: 6),
-                  overlayShape:
-                      const RoundSliderOverlayShape(overlayRadius: 14),
-                  activeTrackColor: const Color(0xFFFF0000),
-                  inactiveTrackColor: Colors.transparent,
-                  thumbColor: Colors.white,
-                  overlayColor: Colors.white12,
-                ),
-                child: Slider(
-                  value: total > 0 ? current.clamp(0, total) : 0,
-                  min: 0,
-                  max: total > 0 ? total : 1,
-                  onChanged: (v) =>
-                      _pc.seek(Duration(seconds: v.toInt())),
-                ),
-              ),
-            ],
+          // Thin red progress line (like reference)
+          Container(
+            height: 2,
+            width: double.infinity,
+            color: const Color(0xFF1A1A1A),
+            child: FractionallySizedBox(
+              widthFactor: fraction,
+              alignment: Alignment.centerLeft,
+              child: Container(color: const Color(0xFFFF3B30)),
+            ),
           ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
+          // Mini player body
+          GestureDetector(
+            onTap: () => Navigator.of(context).push(_slideUpRoute()),
+            child: Container(
+            color: Colors.black,
+            padding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(_fmt(state.current),
-                    style: GoogleFonts.spaceMono(
-                        fontSize: 10, color: Colors.grey.shade600)),
-                Text(_fmt(state.total),
-                    style: GoogleFonts.spaceMono(
-                        fontSize: 10, color: Colors.grey.shade600)),
+                // Red dot indicator
+                Container(
+                  width: 8,
+                  height: 8,
+                  margin: const EdgeInsets.only(right: 10),
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFFF3B30),
+                    shape: BoxShape.circle,
+                  ),
+                ),
+
+                // Title + artist
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        song != null
+                            ? song.title.toUpperCase()
+                            : 'NOTHING PLAYING',
+                        style: GoogleFonts.inter(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                          letterSpacing: 0.3,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      if (song?.artist != null && song!.artist!.isNotEmpty)
+                        Text(
+                          song.artist!.toUpperCase(),
+                          style: GoogleFonts.inter(
+                              fontSize: 10,
+                              color: Colors.grey.shade600,
+                              fontWeight: FontWeight.w500),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                    ],
+                  ),
+                ),
+
+                // Prev
+                _miniCtrl(
+                  icon: Icons.skip_previous_rounded,
+                  onTap: _pc.prev,
+                ),
+
+                // Play / Pause / Loading
+                _miniPlayBtn(state),
+
+                // Next
+                _miniCtrl(
+                  icon: Icons.skip_next_rounded,
+                  onTap: _pc.next,
+                ),
               ],
             ),
           ),
+          ), // GestureDetector
         ],
       );
     });
   }
 
-  Widget _buildControls() {
-    return Obx(() {
-      final state = _pc.buttonState.value;
-      return Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          _ctrlBtn(
-              icon: Icons.shuffle_rounded,
-              onTap: _pc.toggleShuffle,
-              active: _pc.isShuffleEnabled.value,
-              size: 22),
-          const SizedBox(width: 8),
-          _ctrlBtn(
-              icon: Icons.skip_previous_rounded, onTap: _pc.prev, size: 30),
-          const SizedBox(width: 8),
-          GestureDetector(
-            onTap: () {
-              if (state == PlayButtonState.playing) {
-                _pc.pause();
-              } else if (state == PlayButtonState.paused) {
-                _pc.play();
-              }
-            },
-            child: Container(
-              width: 64,
-              height: 64,
-              decoration: BoxDecoration(
-                color: const Color(0xFFFF0000),
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                      color: const Color(0xFFFF0000).withOpacity(0.3),
-                      blurRadius: 20,
-                      spreadRadius: 2)
-                ],
-              ),
-              child: state == PlayButtonState.loading
-                  ? const Padding(
-                      padding: EdgeInsets.all(18),
-                      child: CircularProgressIndicator(
-                          color: Colors.white, strokeWidth: 2),
-                    )
-                  : Icon(
-                      state == PlayButtonState.playing
-                          ? Icons.pause_rounded
-                          : Icons.play_arrow_rounded,
-                      color: Colors.white,
-                      size: 36,
-                    ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          _ctrlBtn(icon: Icons.skip_next_rounded, onTap: _pc.next, size: 30),
-          const SizedBox(width: 8),
-          _ctrlBtn(
-              icon: Icons.repeat_one_rounded,
-              onTap: _pc.toggleLoop,
-              active: _pc.isLoopEnabled.value,
-              size: 22),
-        ],
+  // Slide-up page transition for Now Playing screen
+  PageRouteBuilder _slideUpRoute() => PageRouteBuilder(
+        pageBuilder: (_, __, ___) => const NowPlayingScreen(),
+        transitionsBuilder: (_, animation, __, child) {
+          final tween =
+              Tween(begin: const Offset(0, 1), end: Offset.zero)
+                  .chain(CurveTween(curve: Curves.easeOutCubic));
+          return SlideTransition(
+              position: animation.drive(tween), child: child);
+        },
+        transitionDuration: const Duration(milliseconds: 350),
       );
-    });
-  }
 
-  Widget _ctrlBtn({
-    required IconData icon,
-    required VoidCallback onTap,
-    bool active = false,
-    double size = 24,
-  }) =>
+  Widget _miniCtrl({required IconData icon, required VoidCallback onTap}) =>
       GestureDetector(
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.all(8),
-          child: Icon(icon,
-              size: size,
-              color:
-                  active ? const Color(0xFFFF0000) : Colors.grey.shade500),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          child: Icon(icon, color: Colors.white, size: 26),
         ),
       );
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // Queue
-  // ─────────────────────────────────────────────────────────────────────────
-
-  Widget _buildQueueSection() {
-    return StreamBuilder<List<MediaItem>>(
-      stream: _pc.audioHandler.queue,
-      builder: (context, snap) {
-        final queue = snap.data ?? [];
-        if (queue.isEmpty) return const SizedBox.shrink();
-        return Container(
-          decoration: BoxDecoration(
-            color: const Color(0xFF1A1A1A),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: const Color(0xFF2A2A2A)),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
-                child: Row(
-                  children: [
-                    const Icon(Icons.queue_music_rounded,
-                        color: Color(0xFFFF0000), size: 18),
-                    const SizedBox(width: 8),
-                    Text('QUEUE',
-                        style: GoogleFonts.spaceMono(
-                            fontSize: 11,
-                            color: Colors.grey,
-                            letterSpacing: 2)),
-                    const Spacer(),
-                    Text('${queue.length} songs',
-                        style: GoogleFonts.spaceMono(
-                            fontSize: 10, color: Colors.grey.shade700)),
-                  ],
-                ),
-              ),
-              const Divider(color: Color(0xFF2A2A2A), height: 1),
-              ReorderableListView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: queue.length,
-                onReorder: (oldIndex, newIndex) {
-                  _pc.audioHandler.customAction('reorderQueue', {
-                    'oldIndex': oldIndex,
-                    'newIndex': newIndex,
-                  });
-                },
-                itemBuilder: (_, index) {
-                  final item = queue[index];
-                  final isCurrent = _pc.currentSong.value?.id == item.id;
-                  return _buildQueueItem(item, index, isCurrent,
-                      key: ValueKey('${item.id}$index'));
-                },
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildQueueItem(MediaItem item, int index, bool isCurrent,
-      {required Key key}) {
-    final artUrl = item.artUri?.toString() ?? '';
-    return Container(
-      key: key,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      decoration: BoxDecoration(
-        color: isCurrent
-            ? const Color(0xFFFF0000).withOpacity(0.08)
-            : Colors.transparent,
-        border:
-            const Border(bottom: BorderSide(color: Color(0xFF1F1F1F))),
-      ),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 28,
-            child: isCurrent
-                ? const Icon(Icons.equalizer_rounded,
-                    color: Color(0xFFFF0000), size: 16)
-                : Text('${index + 1}',
-                    style: GoogleFonts.spaceMono(
-                        fontSize: 11, color: Colors.grey.shade700)),
-          ),
-          const SizedBox(width: 8),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: artUrl.isNotEmpty
-                ? Image.network(artUrl,
-                    width: 42,
-                    height: 42,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => _queueThumbPlaceholder())
-                : _queueThumbPlaceholder(),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  item.title,
-                  style: GoogleFonts.rajdhani(
-                      fontSize: 14,
-                      fontWeight:
-                          isCurrent ? FontWeight.w700 : FontWeight.w500,
-                      color: isCurrent
-                          ? const Color(0xFFFF0000)
-                          : Colors.white),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                if (item.artist != null && item.artist!.isNotEmpty)
-                  Text(item.artist!,
-                      style: GoogleFonts.spaceMono(
-                          fontSize: 9, color: Colors.grey.shade600),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis),
-              ],
-            ),
-          ),
-          GestureDetector(
-            onTap: () => _pc.audioHandler.skipToQueueItem(index),
-            child: const Icon(Icons.play_circle_outline_rounded,
-                color: Colors.grey, size: 20),
-          ),
-          const SizedBox(width: 4),
-          GestureDetector(
-            onTap: () => _pc.audioHandler.removeQueueItem(item),
-            child: const Icon(Icons.close_rounded,
-                color: Colors.grey, size: 18),
-          ),
-          const SizedBox(width: 4),
-          const Icon(Icons.drag_handle_rounded,
-              color: Colors.grey, size: 18),
-        ],
-      ),
-    );
-  }
-
-  Widget _queueThumbPlaceholder() => Container(
-        width: 42,
-        height: 42,
-        color: const Color(0xFF2A2A2A),
-        child: const Icon(Icons.music_note_rounded,
-            size: 16, color: Colors.grey),
+  Widget _miniPlayBtn(PlayButtonState state) {
+    if (state == PlayButtonState.loading) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        child: SizedBox(
+          width: 26,
+          height: 26,
+          child: CircularProgressIndicator(
+              color: Colors.white, strokeWidth: 2),
+        ),
       );
+    }
+    return GestureDetector(
+      onTap: () =>
+          state == PlayButtonState.playing ? _pc.pause() : _pc.play(),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        child: Icon(
+          state == PlayButtonState.playing
+              ? Icons.pause_rounded
+              : Icons.play_arrow_rounded,
+          color: Colors.white,
+          size: 28,
+        ),
+      ),
+    );
+  }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // Utilities
-  // ─────────────────────────────────────────────────────────────────────────
+  // ── Utilities ─────────────────────────────────────────────────────────────
 
   String _fmt(Duration d) {
     final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
@@ -916,8 +623,6 @@ class _PlayerScreenState extends State<PlayerScreen>
   void dispose() {
     _searchController.dispose();
     _searchFocus.dispose();
-    _idController.dispose();
-    _titleController.dispose();
     super.dispose();
   }
 }

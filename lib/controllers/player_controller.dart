@@ -72,14 +72,18 @@ class PlayerController extends GetxController {
   void toggleLoop() {
     isLoopEnabled.value = !isLoopEnabled.value;
     audioHandler.setRepeatMode(
-      isLoopEnabled.value ? AudioServiceRepeatMode.one : AudioServiceRepeatMode.none,
+      isLoopEnabled.value
+          ? AudioServiceRepeatMode.one
+          : AudioServiceRepeatMode.none,
     );
   }
 
   void toggleShuffle() {
     isShuffleEnabled.value = !isShuffleEnabled.value;
     audioHandler.setShuffleMode(
-      isShuffleEnabled.value ? AudioServiceShuffleMode.all : AudioServiceShuffleMode.none,
+      isShuffleEnabled.value
+          ? AudioServiceShuffleMode.all
+          : AudioServiceShuffleMode.none,
     );
   }
 
@@ -88,26 +92,38 @@ class PlayerController extends GetxController {
     Hive.box('AppPrefs').put('streamingQuality', isHighQuality.value ? 1 : 0);
   }
 
-  Future<void> playVideoId(String videoId,
-      {String? title, String? artist, String? thumbnail}) async {
+  Future<void> playVideoId(
+    String videoId, {
+    String? title,
+    String? artist,
+    String? thumbnail,
+    Duration? duration,
+  }) async {
     errorMessage.value = null;
     final song = MediaItem(
       id: videoId,
       title: title ?? videoId,
       artist: artist,
       artUri: thumbnail != null ? Uri.tryParse(thumbnail) : null,
+      duration: duration,
       extras: {'url': ''},
     );
     await audioHandler.customAction('setSourceNPlay', {'mediaItem': song});
   }
 
-  Future<void> addToQueue(String videoId,
-      {String? title, String? artist, String? thumbnail}) async {
+  Future<void> addToQueue(
+    String videoId, {
+    String? title,
+    String? artist,
+    String? thumbnail,
+    Duration? duration,
+  }) async {
     final song = MediaItem(
       id: videoId,
       title: title ?? videoId,
       artist: artist,
       artUri: thumbnail != null ? Uri.tryParse(thumbnail) : null,
+      duration: duration,
       extras: {'url': ''},
     );
     await audioHandler.addQueueItem(song);
