@@ -97,7 +97,7 @@ class HomeService {
   static Future<HomeData?> getUpdates() async {
     try {
       final res = await http
-          .get(Uri.parse('$_base/getupdates'))
+          .get(Uri.parse('$_base/trending'))
           .timeout(const Duration(seconds: 15));
       if (res.statusCode == 200) {
         return HomeData.fromJson(

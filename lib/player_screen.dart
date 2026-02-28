@@ -10,6 +10,7 @@ import './controllers/search_controller.dart';
 import './services/home_service.dart';
 import './services/search_service.dart';
 import 'now_playing_screen.dart';
+import 'playlist_screen.dart';
 
 class PlayerScreen extends StatefulWidget {
   const PlayerScreen({super.key});
@@ -333,62 +334,13 @@ class _PlayerScreenState extends State<PlayerScreen>
       );
 
   void _playlistSheet(TrendingPlaylist p) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: const Color(0xFF111111),
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
-      builder: (_) => Padding(
-        padding: const EdgeInsets.fromLTRB(0, 12, 0, 32),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          // handle
-          Container(
-            width: 36,
-            height: 4,
-            decoration: BoxDecoration(
-                color: Colors.grey.shade700,
-                borderRadius: BorderRadius.circular(2)),
-          ),
-          const SizedBox(height: 16),
-          // header
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Row(children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: p.thumbnailUrl.isNotEmpty
-                    ? Image.network(p.thumbnailUrl,
-                        width: 52, height: 52, fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) =>
-                            _playlistPlaceholder(52))
-                    : _playlistPlaceholder(52),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Text(p.title,
-                    style: GoogleFonts.inter(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.white)),
-              ),
-            ]),
-          ),
-          const SizedBox(height: 8),
-          Divider(color: Colors.grey.shade900),
-          ListTile(
-            leading:
-                Icon(Icons.info_outline_rounded, color: Colors.grey.shade500, size: 20),
-            title: Text('Playlist ID',
-                style: GoogleFonts.inter(
-                    fontSize: 13, color: Colors.grey.shade400)),
-            subtitle: Text(p.playlistId,
-                style: GoogleFonts.inter(
-                    fontSize: 11, color: Colors.grey.shade600)),
-            dense: true,
-          ),
-        ]),
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => PlaylistScreen(
+        playlistId: p.playlistId,
+        playlistTitle: p.title,
+        thumbnailUrl: p.thumbnailUrl,
       ),
-    );
+    ));
   }
 
   // ── Artist tile ───────────────────────────────────────────────────────────
