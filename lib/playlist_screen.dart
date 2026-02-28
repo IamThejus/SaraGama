@@ -56,8 +56,51 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
 
   // ── play helpers ──────────────────────────────────────────────────────────
 
+  /// Plays first track immediately (with recommendations), clears existing
+  /// queue first, then appends all remaining playlist tracks behind it.
+  void _playAll() {
+    if (_detail == null || _detail!.tracks.isEmpty) return;
+    final tracks = _detail!.tracks;
+
+    // Clear current queue down to just the song we're about to play
+    _pc.audioHandler.customAction('clearQueue');
+
+    // Play first song (also fetches recommendations but they go after playlist)
+    final first = tracks.first;
+    _pc.playWithRecommendations(first.videoId,
+        title: first.title,
+        artist: first.artistLine,
+        thumbnail: first.thumbnailUrl,
+        duration: first.durationValue);
+
+    // Queue remaining playlist tracks RIGHT after the first song
+    // so playlist order is preserved before recommendations
+    for (final t in tracks.skip(1)) {
+      _pc.addToQueue(t.videoId,
+          title: t.title,
+          artist: t.artistLine,
+          thumbnail: t.thumbnailUrl,
+          duration: t.durationValue);
+    }
+
+    _snack('Playing ${tracks.length} songs');
+  }
+
+  /// Silently appends every track in the playlist to the current queue.
+  void _addAllToQueue() {
+    if (_detail == null || _detail!.tracks.isEmpty) return;
+    for (final t in _detail!.tracks) {
+      _pc.addToQueue(t.videoId,
+          title: t.title,
+          artist: t.artistLine,
+          thumbnail: t.thumbnailUrl,
+          duration: t.durationValue);
+    }
+    _snack('Added ${_detail!.tracks.length} songs to queue');
+  }
+
   void _playSong(PlaylistTrack t) {
-    _pc.playVideoId(t.videoId,
+    _pc.playWithRecommendations(t.videoId,
         title: t.title,
         artist: t.artistLine,
         thumbnail: t.thumbnailUrl,
@@ -72,24 +115,6 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
         thumbnail: t.thumbnailUrl,
         duration: t.durationValue);
     _snack('Added: ${t.title}');
-  }
-
-  void _playAll() {
-    if (_detail == null || _detail!.tracks.isEmpty) return;
-    final first = _detail!.tracks.first;
-    _pc.playVideoId(first.videoId,
-        title: first.title,
-        artist: first.artistLine,
-        thumbnail: first.thumbnailUrl,
-        duration: first.durationValue);
-    for (final t in _detail!.tracks.skip(1)) {
-      _pc.addToQueue(t.videoId,
-          title: t.title,
-          artist: t.artistLine,
-          thumbnail: t.thumbnailUrl,
-          duration: t.durationValue);
-    }
-    _snack('Playing all ${_detail!.tracks.length} songs');
   }
 
   void _snack(String msg) => ScaffoldMessenger.of(context).showSnackBar(
@@ -248,12 +273,12 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
           ),
         ),
 
-        // ── Play all button ───────────────────────────────────────────────
+        // ── Action buttons ────────────────────────────────────────────────
         SliverToBoxAdapter(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
             child: Row(children: [
-              // Play all
+              // PLAY ALL
               Expanded(
                 child: GestureDetector(
                   onTap: _playAll,
@@ -275,6 +300,34 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                                   fontWeight: FontWeight.w700,
                                   color: Colors.white,
                                   letterSpacing: 1.5)),
+                        ]),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              // ADD ALL TO QUEUE
+              Expanded(
+                child: GestureDetector(
+                  onTap: _addAllToQueue,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    decoration: BoxDecoration(
+                      color: Colors.transparent,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.grey.shade800),
+                    ),
+                    child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.add_rounded,
+                              color: Colors.grey.shade300, size: 20),
+                          const SizedBox(width: 6),
+                          Text('ADD TO QUEUE',
+                              style: GoogleFonts.inter(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.grey.shade300,
+                                  letterSpacing: 1.2)),
                         ]),
                   ),
                 ),

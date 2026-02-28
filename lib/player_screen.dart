@@ -60,7 +60,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   }
 
   void _play(SearchResult r) {
-    _pc.playVideoId(r.videoId,
+    _pc.playWithRecommendations(r.videoId,
         title: r.title,
         artist: r.artistLine,
         thumbnail: r.thumbnail,

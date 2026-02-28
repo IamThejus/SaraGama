@@ -2,6 +2,7 @@
 import 'package:audio_service/audio_service.dart';
 import 'package:get/get.dart';
 import 'package:hive/hive.dart';
+import '../services/recommendation_service.dart';
 
 class ProgressBarState {
   final Duration current;
@@ -72,14 +73,18 @@ class PlayerController extends GetxController {
   void toggleLoop() {
     isLoopEnabled.value = !isLoopEnabled.value;
     audioHandler.setRepeatMode(
-      isLoopEnabled.value ? AudioServiceRepeatMode.one : AudioServiceRepeatMode.none,
+      isLoopEnabled.value
+          ? AudioServiceRepeatMode.one
+          : AudioServiceRepeatMode.none,
     );
   }
 
   void toggleShuffle() {
     isShuffleEnabled.value = !isShuffleEnabled.value;
     audioHandler.setShuffleMode(
-      isShuffleEnabled.value ? AudioServiceShuffleMode.all : AudioServiceShuffleMode.none,
+      isShuffleEnabled.value
+          ? AudioServiceShuffleMode.all
+          : AudioServiceShuffleMode.none,
     );
   }
 
@@ -89,41 +94,66 @@ class PlayerController extends GetxController {
   }
 
   Future<void> playVideoId(
-  String videoId, {
-  String? title,
-  String? artist,
-  String? thumbnail,
-  Duration? duration,   // ← add this
-}) async {
-  errorMessage.value = null;
-  final song = MediaItem(
-    id: videoId,
-    title: title ?? videoId,
-    artist: artist,
-    artUri: thumbnail != null ? Uri.tryParse(thumbnail) : null,
-    duration: duration,   // ← add this
-    extras: {'url': ''},
-  );
-  await audioHandler.customAction('setSourceNPlay', {'mediaItem': song});
-}
+    String videoId, {
+    String? title,
+    String? artist,
+    String? thumbnail,
+    Duration? duration,
+  }) async {
+    errorMessage.value = null;
+    final song = MediaItem(
+      id: videoId,
+      title: title ?? videoId,
+      artist: artist,
+      artUri: thumbnail != null ? Uri.tryParse(thumbnail) : null,
+      duration: duration,
+      extras: {'url': ''},
+    );
+    await audioHandler.customAction('setSourceNPlay', {'mediaItem': song});
+  }
 
-Future<void> addToQueue(
-  String videoId, {
-  String? title,
-  String? artist,
-  String? thumbnail,
-  Duration? duration,   // ← add this
-}) async {
-  final song = MediaItem(
-    id: videoId,
-    title: title ?? videoId,
-    artist: artist,
-    artUri: thumbnail != null ? Uri.tryParse(thumbnail) : null,
-    duration: duration,   // ← add this
-    extras: {'url': ''},
-  );
-  await audioHandler.addQueueItem(song);
-}
+  Future<void> addToQueue(
+    String videoId, {
+    String? title,
+    String? artist,
+    String? thumbnail,
+    Duration? duration,
+  }) async {
+    final song = MediaItem(
+      id: videoId,
+      title: title ?? videoId,
+      artist: artist,
+      artUri: thumbnail != null ? Uri.tryParse(thumbnail) : null,
+      duration: duration,
+      extras: {'url': ''},
+    );
+    await audioHandler.addQueueItem(song);
+  }
+
+  /// Plays the song immediately, then silently fetches recommendations
+  /// and appends them to the queue so they auto-play next.
+  Future<void> playWithRecommendations(
+    String videoId, {
+    String? title,
+    String? artist,
+    String? thumbnail,
+    Duration? duration,
+  }) async {
+    // 1. Play the song right away — no waiting
+    await playVideoId(videoId,
+        title: title, artist: artist, thumbnail: thumbnail, duration: duration);
+
+    // 2. Fetch recommendations in background — fire and forget
+    RecommendationService.getRecommendations(videoId).then((recs) {
+      for (final r in recs) {
+        addToQueue(r.videoId,
+            title: r.title,
+            artist: r.artist,
+            thumbnail: r.thumbnail,
+            duration: r.durationValue);
+      }
+    });
+  }
 
   void notifyError(String msg) => errorMessage.value = msg;
 }

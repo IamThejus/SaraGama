@@ -19,6 +19,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../models/hm_streaming_data.dart';
 import '../services/background_task.dart';
+import '../services/stream_service.dart';
 import '../controllers/player_controller.dart';
 
 Future<AudioHandler> initAudioService() async {
@@ -413,24 +414,32 @@ class MyAudioHandler extends BaseAudioHandler with GetxServiceMixin {
         final isNewUrl = extras['newUrl'] ?? false;
         final song = queue.value[currentIndex];
 
-        isSongLoading = true;
-        playbackState.add(playbackState.value
-            .copyWith(processingState: AudioProcessingState.loading));
+        // ── Stop current playback IMMEDIATELY so old song never bleeds ──
+        // This is the key fix: pause + clear BEFORE the async URL fetch.
+        // Without this, just_audio keeps playing the old source while we
+        // await checkNGetUrl(), causing the old song to bleed briefly.
+        await _player.pause();
+        await _playList.clear();
+        currentSongUrl = null;
 
+        isSongLoading = true;
+        playbackState.add(playbackState.value.copyWith(
+          processingState: AudioProcessingState.loading,
+          playing: false,
+        ));
         mediaItem.add(song);
 
-        // Fetch URL (cached or fresh)
+        // Fetch URL (cached or fresh) — now happens with player fully stopped
         final streamInfo =
             await checkNGetUrl(song.id, generateNewUrl: isNewUrl);
 
-        // Guard: user may have skipped while we were fetching
+        // Guard: user may have skipped again while we were fetching
         if (songIndex != currentIndex) return;
 
         if (!streamInfo.playable) {
           currentSongUrl = null;
           isSongLoading = false;
-          Get.find<PlayerController>()
-              .notifyError(streamInfo.statusMSG);
+          Get.find<PlayerController>().notifyError(streamInfo.statusMSG);
           playbackState.add(playbackState.value.copyWith(
             processingState: AudioProcessingState.error,
             errorMessage: streamInfo.statusMSG,
@@ -439,8 +448,6 @@ class MyAudioHandler extends BaseAudioHandler with GetxServiceMixin {
         }
 
         currentSongUrl = song.extras!['url'] = streamInfo.audio!.url;
-
-        await _playList.clear();
         await _playList.add(_createAudioSource(song));
 
         isSongLoading = false;
