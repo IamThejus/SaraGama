@@ -27,7 +27,14 @@ class PlaylistTrack {
         .where((n) => n.isNotEmpty)
         .join(', ');
     final thumbs = json['thumbnails'] as List? ?? [];
-    final url = thumbs.isNotEmpty ? thumbs[0]['url'] as String : '';
+    // Prefer highest res thumbnail available
+    String url = '';
+    if (thumbs.isNotEmpty) {
+      // Try to get the largest one (last in list is usually highest res)
+      url = (thumbs.last['url'] as String? ?? '');
+      // Upgrade to high-res using YouTube CDN param replacement
+      url = _upgradeThumb(url);
+    }
     return PlaylistTrack(
       videoId: json['videoId'] ?? '',
       title: json['title'] ?? '',
@@ -36,6 +43,13 @@ class PlaylistTrack {
       duration: json['duration'] ?? '',
       durationSeconds: json['duration_seconds'] as int? ?? 0,
     );
+  }
+
+  static String _upgradeThumb(String url) {
+    if (url.isEmpty) return url;
+    return url
+        .replaceAll(RegExp(r'=w\d+-h\d+[^ ]*$'), '=w544-h544-l90-rj')
+        .replaceAll(RegExp(r'=s\d+[^ ]*$'), '=w544-h544-l90-rj');
   }
 }
 
@@ -93,19 +107,33 @@ class PlaylistDetail {
 class PlaylistService {
   static const _base = 'https://saragama-render.onrender.com';
 
+  // ── Session-level in-memory cache ─────────────────────────────────────────
+  // Cleared when app restarts. Prevents re-fetching the same playlist
+  // every time the user opens it during the same session.
+  static final Map<String, PlaylistDetail> _cache = {};
+
   static Future<PlaylistDetail?> getPlaylist(String playlistId) async {
+    // Return cached version instantly if available
+    if (_cache.containsKey(playlistId)) return _cache[playlistId];
+
     try {
       final uri = Uri.parse('$_base/playlist')
           .replace(queryParameters: {'playid': playlistId});
-      final res =
-          await http.get(uri).timeout(const Duration(seconds: 20));
+      final res = await http.get(uri).timeout(const Duration(seconds: 20));
       if (res.statusCode == 200) {
         final body = json.decode(res.body);
-        // API returns [] on error
-        if (body is List) return null;
-        return PlaylistDetail.fromJson(Map<String, dynamic>.from(body));
+        if (body is List) return null; // API returns [] on error
+        final detail = PlaylistDetail.fromJson(Map<String, dynamic>.from(body));
+        _cache[playlistId] = detail; // store in cache
+        return detail;
       }
     } catch (_) {}
     return null;
+  }
+
+  /// Force-refresh a playlist, bypassing the cache.
+  static Future<PlaylistDetail?> refreshPlaylist(String playlistId) {
+    _cache.remove(playlistId);
+    return getPlaylist(playlistId);
   }
 }

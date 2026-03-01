@@ -10,6 +10,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../controllers/player_controller.dart';
 import '../services/playlist_service.dart';
+import '../services/recommendation_service.dart';
 
 class PlaylistScreen extends StatefulWidget {
   final String playlistId;
@@ -57,25 +58,25 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
 
   // ── play helpers ──────────────────────────────────────────────────────────
 
-  /// Plays first track immediately (with recommendations), clears existing
-  /// queue first, then appends all remaining playlist tracks behind it.
+  /// Plays first track immediately, queues all remaining playlist tracks,
+  /// then fetches recommendations and appends them at the very end.
+  /// This preserves playlist order: Song1 → Song2...SongN → recommendations.
   void _playAll() {
     if (_detail == null || _detail!.tracks.isEmpty) return;
     final tracks = _detail!.tracks;
 
-    // Clear current queue down to just the song we're about to play
+    // Clear current queue
     _pc.audioHandler.customAction('clearQueue');
 
-    // Play first song (also fetches recommendations but they go after playlist)
+    // Play first song WITHOUT recommendations (use plain playVideoId)
     final first = tracks.first;
-    _pc.playWithRecommendations(first.videoId,
+    _pc.playVideoId(first.videoId,
         title: first.title,
         artist: first.artistLine,
         thumbnail: first.thumbnailUrl,
         duration: first.durationValue);
 
-    // Queue remaining playlist tracks RIGHT after the first song
-    // so playlist order is preserved before recommendations
+    // Queue ALL remaining playlist tracks immediately after
     for (final t in tracks.skip(1)) {
       _pc.addToQueue(t.videoId,
           title: t.title,
@@ -83,6 +84,17 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
           thumbnail: t.thumbnailUrl,
           duration: t.durationValue);
     }
+
+    // Fetch recommendations in background and append AFTER the full playlist
+    RecommendationService.getRecommendations(first.videoId).then((recs) {
+      for (final r in recs) {
+        _pc.addToQueue(r.videoId,
+            title: r.title,
+            artist: r.artist,
+            thumbnail: r.thumbnail,
+            duration: r.durationValue);
+      }
+    });
 
     _snack('Playing ${tracks.length} songs');
   }
