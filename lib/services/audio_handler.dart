@@ -19,7 +19,6 @@ import 'package:path_provider/path_provider.dart';
 
 import '../models/hm_streaming_data.dart';
 import '../services/background_task.dart';
-import '../services/stream_service.dart';
 import '../controllers/player_controller.dart';
 
 Future<AudioHandler> initAudioService() async {
@@ -61,6 +60,7 @@ class MyAudioHandler extends BaseAudioHandler with GetxServiceMixin {
   bool shuffleModeEnabled = false;
   bool loudnessNormalizationEnabled = false;
   bool isSongLoading = true;
+  bool _isTransitioning = false; // prevents double-trigger on song end
 
   List<String> shuffledQueue = [];
   int currentShuffleIndex = 0;
@@ -154,9 +154,11 @@ class MyAudioHandler extends BaseAudioHandler with GetxServiceMixin {
 
   void _listenForNextSong() {
     _player.positionStream.listen((pos) async {
+      if (_isTransitioning) return; // already handling a transition
       if (_player.duration != null && _player.duration!.inSeconds != 0) {
         if (pos.inMilliseconds >=
             (_player.duration!.inMilliseconds - 200)) {
+          _isTransitioning = true;
           await _triggerNext();
         }
       }
@@ -167,9 +169,11 @@ class MyAudioHandler extends BaseAudioHandler with GetxServiceMixin {
     if (loopModeEnabled) {
       await _player.seek(Duration.zero);
       if (!_player.playing) _player.play();
+      _isTransitioning = false;
       return;
     }
-    skipToNext();
+    await skipToNext();
+    // _isTransitioning is reset inside playByIndex after new song starts
   }
 
   void _listenForDurationChanges() {
@@ -368,6 +372,21 @@ class MyAudioHandler extends BaseAudioHandler with GetxServiceMixin {
     _player.setVolume(vol);
   }
 
+  // ── Prefetch next song URL ────────────────────────────────────────────────
+  // Called after playByIndex so the next song's URL is already in Hive
+  // cache when the user skips or the song ends — zero loading delay.
+
+  void _prefetchNext() {
+    try {
+      final q = queue.value;
+      final nextIdx = currentIndex + 1;
+      if (nextIdx >= q.length) return;
+      final nextId = q[nextIdx].id;
+      // Fire and forget — just warms the cache
+      checkNGetUrl(nextId).catchError((_) {});
+    } catch (_) {}
+  }
+
   // ── URL resolution — mirrors HarmonyMusic's checkNGetUrl() ───────────────
   // Priority: cached file → downloaded file → cached URL → fresh Isolate fetch
 
@@ -459,6 +478,11 @@ class MyAudioHandler extends BaseAudioHandler with GetxServiceMixin {
         }
 
         await _player.play();
+
+        // Reset transition guard so next song-end triggers correctly
+        _isTransitioning = false;
+        // Silently prefetch the next song's URL into cache
+        _prefetchNext();
         break;
 
       // ── Load a single song and play immediately ─────────────────────────
@@ -549,6 +573,43 @@ class MyAudioHandler extends BaseAudioHandler with GetxServiceMixin {
       // ── Set volume (0–100) ──────────────────────────────────────────────
       case 'setVolume':
         _player.setVolume((extras!['value'] as int) / 100);
+        break;
+
+      // ── Restore saved session on app start ─────────────────────────────
+      case 'restoreSession':
+        final items = extras!['items'] as List<MediaItem>;
+        final restoreIndex = extras['index'] as int;
+        final posMs = extras['positionMs'] as int? ?? 0;
+        if (items.isEmpty) break;
+
+        // Rebuild queue without playing yet
+        queue.add(items);
+        currentIndex = restoreIndex;
+        mediaItem.add(items[restoreIndex]);
+
+        isSongLoading = true;
+        playbackState.add(playbackState.value.copyWith(
+          processingState: AudioProcessingState.loading,
+        ));
+
+        final restoreStream = await checkNGetUrl(items[restoreIndex].id);
+        if (!restoreStream.playable) {
+          isSongLoading = false;
+          break;
+        }
+
+        currentSongUrl = items[restoreIndex].extras!['url'] =
+            restoreStream.audio!.url;
+        await _playList.clear();
+        await _playList.add(_createAudioSource(items[restoreIndex]));
+        isSongLoading = false;
+        playbackState.add(playbackState.value.copyWith(
+          queueIndex: restoreIndex,
+          processingState: AudioProcessingState.ready,
+        ));
+        // Seek to saved position but don't auto-play — user resumes manually
+        await _player.seek(Duration(milliseconds: posMs));
+        _prefetchNext();
         break;
 
       // ── Dispose ─────────────────────────────────────────────────────────

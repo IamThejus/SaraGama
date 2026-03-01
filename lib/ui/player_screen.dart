@@ -1,14 +1,17 @@
 // ui/player_screen.dart
 import 'package:audio_service/audio_service.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-import './controllers/home_controller.dart';
-import './controllers/player_controller.dart';
-import './controllers/search_controller.dart';
-import './services/home_service.dart';
-import './services/search_service.dart';
+import '../controllers/home_controller.dart';
+import '../controllers/player_controller.dart';
+import '../controllers/search_controller.dart';
+import '../services/home_service.dart';
+import '../services/library_service.dart';
+import '../services/search_service.dart';
+import 'library_screen.dart';
 import 'now_playing_screen.dart';
 import 'playlist_screen.dart';
 
@@ -32,7 +35,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: 2, vsync: this);
+    _tabs = TabController(length: 3, vsync: this);
     _tabs.addListener(() => setState(() {}));
   }
 
@@ -44,7 +47,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     super.dispose();
   }
 
-  // ── search ────────────────────────────────────────────────────────────────
+  // ── Search ────────────────────────────────────────────────────────────────
 
   void _openSearch() {
     setState(() => _searchOpen = true);
@@ -60,11 +63,28 @@ class _PlayerScreenState extends State<PlayerScreen>
   }
 
   void _play(SearchResult r) {
+    // Save to search history
+    _pc.addToSearchHistory(LibraryTrack(
+      videoId: r.videoId,
+      title: r.title,
+      artist: r.artistLine,
+      thumbnail: r.thumbnail,
+      duration: r.duration,
+    ));
     _pc.playWithRecommendations(r.videoId,
         title: r.title,
         artist: r.artistLine,
         thumbnail: r.thumbnail,
         duration: r.durationValue);
+    _closeSearch();
+  }
+
+  void _playFromHistory(LibraryTrack t) {
+    _pc.playWithRecommendations(t.videoId,
+        title: t.title,
+        artist: t.artist,
+        thumbnail: t.thumbnail,
+        duration: t.durationValue);
     _closeSearch();
   }
 
@@ -79,13 +99,12 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   void _snack(String msg) => ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-            content:
-                Text(msg, style: GoogleFonts.inter(fontSize: 12)),
+            content: Text(msg, style: GoogleFonts.inter(fontSize: 12)),
             duration: const Duration(seconds: 1),
             backgroundColor: const Color(0xFF1C1C1C)),
       );
 
-  // ── root build ────────────────────────────────────────────────────────────
+  // ── Build ─────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -103,21 +122,24 @@ class _PlayerScreenState extends State<PlayerScreen>
                       ? _searchBody()
                       : TabBarView(
                           controller: _tabs,
-                          children: [_homeTab(), _queueTab()],
+                          children: [
+                            _homeTab(),
+                            _queueTab(),
+                            const LibraryScreen(),
+                          ],
                         ),
                 ),
                 const SizedBox(height: 72),
               ],
             ),
-            Positioned(
-                left: 0, right: 0, bottom: 0, child: _miniPlayer()),
+            Positioned(left: 0, right: 0, bottom: 0, child: _miniPlayer()),
           ],
         ),
       ),
     );
   }
 
-  // ── top bar ───────────────────────────────────────────────────────────────
+  // ── Top bar ───────────────────────────────────────────────────────────────
 
   Widget _topBar() {
     if (_searchOpen) {
@@ -137,8 +159,8 @@ class _PlayerScreenState extends State<PlayerScreen>
               style: GoogleFonts.inter(color: Colors.white, fontSize: 15),
               decoration: InputDecoration(
                 hintText: 'Search songs...',
-                hintStyle: GoogleFonts.inter(
-                    color: Colors.grey.shade600, fontSize: 15),
+                hintStyle:
+                    GoogleFonts.inter(color: Colors.grey.shade600, fontSize: 15),
                 border: InputBorder.none,
                 isDense: true,
               ),
@@ -174,8 +196,8 @@ class _PlayerScreenState extends State<PlayerScreen>
         const Spacer(),
         GestureDetector(
             onTap: _openSearch,
-            child: Icon(Icons.search_rounded,
-                color: Colors.grey.shade500, size: 26)),
+            child:
+                Icon(Icons.search_rounded, color: Colors.grey.shade500, size: 26)),
       ]),
     );
   }
@@ -189,20 +211,18 @@ class _PlayerScreenState extends State<PlayerScreen>
           labelColor: Colors.white,
           unselectedLabelColor: Colors.grey.shade600,
           labelStyle: GoogleFonts.inter(
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 1.8),
+              fontSize: 12, fontWeight: FontWeight.w700, letterSpacing: 1.8),
           unselectedLabelStyle: GoogleFonts.inter(
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
-              letterSpacing: 1.8),
-          tabs: const [Tab(text: 'HOME'), Tab(text: 'QUEUE')],
+              fontSize: 12, fontWeight: FontWeight.w500, letterSpacing: 1.8),
+          tabs: const [
+            Tab(text: 'HOME'),
+            Tab(text: 'QUEUE'),
+            Tab(text: 'LIBRARY'),
+          ],
         ),
       );
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // HOME TAB
-  // ─────────────────────────────────────────────────────────────────────────
+  // ── HOME TAB ──────────────────────────────────────────────────────────────
 
   Widget _homeTab() {
     return Obx(() {
@@ -222,15 +242,10 @@ class _PlayerScreenState extends State<PlayerScreen>
         child: ListView(
           padding: const EdgeInsets.only(bottom: 8),
           children: [
-            // ── Daily trending ──────────────────────────────────────────
             _sectionLabel('DAILY TRENDING'),
             _playlistRow(data.daily),
-
-            // ── Weekly charts ───────────────────────────────────────────
             _sectionLabel('WEEKLY CHARTS'),
             _playlistRow(data.weekly),
-
-            // ── Top artists ─────────────────────────────────────────────
             _sectionLabel('TOP ARTISTS'),
             ...data.artists.map(_artistTile),
             const SizedBox(height: 8),
@@ -245,14 +260,12 @@ class _PlayerScreenState extends State<PlayerScreen>
           Icon(Icons.wifi_off_rounded, size: 48, color: Colors.grey.shade800),
           const SizedBox(height: 12),
           Text('Could not load charts',
-              style: GoogleFonts.inter(
-                  fontSize: 14, color: Colors.grey.shade600)),
+              style: GoogleFonts.inter(fontSize: 14, color: Colors.grey.shade600)),
           const SizedBox(height: 16),
           GestureDetector(
             onTap: _hc.fetchHome,
             child: Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
               decoration: BoxDecoration(
                   border: Border.all(color: Colors.grey.shade800),
                   borderRadius: BorderRadius.circular(8)),
@@ -277,8 +290,6 @@ class _PlayerScreenState extends State<PlayerScreen>
                 letterSpacing: 2.5)),
       );
 
-  // ── Horizontal playlist cards ─────────────────────────────────────────────
-
   Widget _playlistRow(List<TrendingPlaylist> list) => SizedBox(
         height: 168,
         child: ListView.separated(
@@ -290,37 +301,41 @@ class _PlayerScreenState extends State<PlayerScreen>
         ),
       );
 
-  Widget _playlistCard(TrendingPlaylist p) {
-    return GestureDetector(
-      onTap: () => _playlistSheet(p),
-      child: SizedBox(
-        width: 132,
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          // Thumbnail
-          ClipRRect(
-            borderRadius: BorderRadius.circular(10),
-            child: p.thumbnailUrl.isNotEmpty
-                ? Image.network(
-                    p.thumbnailUrl,
-                    width: 132,
-                    height: 132,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => _playlistPlaceholder(132),
-                  )
-                : _playlistPlaceholder(132),
+  Widget _playlistCard(TrendingPlaylist p) => GestureDetector(
+        onTap: () => Navigator.of(context).push(MaterialPageRoute(
+          builder: (_) => PlaylistScreen(
+            playlistId: p.playlistId,
+            playlistTitle: p.title,
+            thumbnailUrl: p.thumbnailUrl,
           ),
-          const SizedBox(height: 6),
-          Text(p.title,
-              style: GoogleFonts.inter(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.grey.shade300),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis),
-        ]),
-      ),
-    );
-  }
+        )),
+        child: SizedBox(
+          width: 132,
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: p.thumbnailUrl.isNotEmpty
+                  ? CachedNetworkImage(
+                      imageUrl: p.thumbnailUrl,
+                      width: 132,
+                      height: 132,
+                      fit: BoxFit.cover,
+                      errorWidget: (_, __, ___) => _playlistPlaceholder(132),
+                    )
+                  : _playlistPlaceholder(132),
+            ),
+            const SizedBox(height: 6),
+            Text(p.title,
+                style: GoogleFonts.inter(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey.shade300),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis),
+          ]),
+        ),
+      );
 
   Widget _playlistPlaceholder(double size) => Container(
         width: size,
@@ -332,18 +347,6 @@ class _PlayerScreenState extends State<PlayerScreen>
         child: Icon(Icons.library_music_rounded,
             size: size * 0.32, color: Colors.grey.shade800),
       );
-
-  void _playlistSheet(TrendingPlaylist p) {
-    Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => PlaylistScreen(
-        playlistId: p.playlistId,
-        playlistTitle: p.title,
-        thumbnailUrl: p.thumbnailUrl,
-      ),
-    ));
-  }
-
-  // ── Artist tile ───────────────────────────────────────────────────────────
 
   Widget _artistTile(TrendingArtist a) {
     Widget trendWidget;
@@ -370,8 +373,8 @@ class _PlayerScreenState extends State<PlayerScreen>
                 letterSpacing: 1)),
       ]);
     } else {
-      trendWidget = Icon(Icons.remove_rounded,
-          color: Colors.grey.shade700, size: 14);
+      trendWidget =
+          Icon(Icons.remove_rounded, color: Colors.grey.shade700, size: 14);
     }
 
     return Container(
@@ -380,7 +383,6 @@ class _PlayerScreenState extends State<PlayerScreen>
               bottom: BorderSide(color: Colors.grey.shade900, width: 0.5))),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       child: Row(children: [
-        // rank
         SizedBox(
           width: 30,
           child: Text(a.rank,
@@ -391,18 +393,17 @@ class _PlayerScreenState extends State<PlayerScreen>
               textAlign: TextAlign.center),
         ),
         const SizedBox(width: 10),
-        // avatar
         ClipOval(
           child: a.thumbnailUrl.isNotEmpty
-              ? Image.network(a.thumbnailUrl,
+              ? CachedNetworkImage(
+                  imageUrl: a.thumbnailUrl,
                   width: 46,
                   height: 46,
                   fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => _artistPlaceholder())
+                  errorWidget: (_, __, ___) => _artistPlaceholder())
               : _artistPlaceholder(),
         ),
         const SizedBox(width: 12),
-        // name + subscribers
         Expanded(
           child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -430,13 +431,10 @@ class _PlayerScreenState extends State<PlayerScreen>
         width: 46,
         height: 46,
         color: const Color(0xFF1C1C1C),
-        child: Icon(Icons.person_rounded,
-            size: 24, color: Colors.grey.shade700),
+        child: Icon(Icons.person_rounded, size: 24, color: Colors.grey.shade700),
       );
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // QUEUE TAB
-  // ─────────────────────────────────────────────────────────────────────────
+  // ── QUEUE TAB ─────────────────────────────────────────────────────────────
 
   Widget _queueTab() {
     return StreamBuilder<List<MediaItem>>(
@@ -456,8 +454,8 @@ class _PlayerScreenState extends State<PlayerScreen>
                       color: Colors.grey.shade700)),
               const SizedBox(height: 6),
               Text('Search  🔍  and add songs',
-                  style: GoogleFonts.inter(
-                      fontSize: 12, color: Colors.grey.shade700)),
+                  style:
+                      GoogleFonts.inter(fontSize: 12, color: Colors.grey.shade700)),
             ]),
           );
         }
@@ -476,8 +474,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     );
   }
 
-  Widget _queueRow(MediaItem item, int index, bool cur,
-      {required Key key}) {
+  Widget _queueRow(MediaItem item, int index, bool cur, {required Key key}) {
     final art = item.artUri?.toString() ?? '';
     final dur = item.duration;
     final ds = dur != null ? _fmt(dur) : '';
@@ -489,17 +486,17 @@ class _PlayerScreenState extends State<PlayerScreen>
         color: cur
             ? const Color(0xFFFF3B30).withOpacity(0.06)
             : Colors.transparent,
-        padding:
-            const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
         child: Row(children: [
           ClipRRect(
             borderRadius: BorderRadius.circular(6),
             child: art.isNotEmpty
-                ? Image.network(art,
+                ? CachedNetworkImage(
+                    imageUrl: art,
                     width: 46,
                     height: 46,
                     fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => _queueThumb())
+                    errorWidget: (_, __, ___) => _queueThumb())
                 : _queueThumb(),
           ),
           const SizedBox(width: 12),
@@ -514,8 +511,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                         height: 7,
                         margin: const EdgeInsets.only(right: 6),
                         decoration: const BoxDecoration(
-                            color: Color(0xFFFF3B30),
-                            shape: BoxShape.circle),
+                            color: Color(0xFFFF3B30), shape: BoxShape.circle),
                       ),
                     Expanded(
                       child: Text(item.title.toUpperCase(),
@@ -541,20 +537,19 @@ class _PlayerScreenState extends State<PlayerScreen>
           if (ds.isNotEmpty) ...[
             const SizedBox(width: 8),
             Text(ds,
-                style: GoogleFonts.inter(
-                    fontSize: 11, color: Colors.grey.shade600)),
+                style:
+                    GoogleFonts.inter(fontSize: 11, color: Colors.grey.shade600)),
           ],
           const SizedBox(width: 4),
           GestureDetector(
             onTap: () => _pc.audioHandler.removeQueueItem(item),
             child: Padding(
               padding: const EdgeInsets.all(6),
-              child: Icon(Icons.close_rounded,
-                  color: Colors.grey.shade700, size: 17),
+              child:
+                  Icon(Icons.close_rounded, color: Colors.grey.shade700, size: 17),
             ),
           ),
-          Icon(Icons.drag_handle_rounded,
-              color: Colors.grey.shade800, size: 18),
+          Icon(Icons.drag_handle_rounded, color: Colors.grey.shade800, size: 18),
         ]),
       ),
     );
@@ -571,20 +566,59 @@ class _PlayerScreenState extends State<PlayerScreen>
             size: 20, color: Colors.grey.shade700),
       );
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // SEARCH BODY
-  // ─────────────────────────────────────────────────────────────────────────
+  // ── SEARCH BODY ───────────────────────────────────────────────────────────
 
   Widget _searchBody() => Obx(() {
         final results = _sc.results;
         final loading = _sc.isLoading.value;
         final q = _sc.query.value;
+
+        // Empty query — show search history
         if (q.isEmpty) {
-          return Center(
-              child: Text('Type to search songs',
-                  style: GoogleFonts.inter(
-                      fontSize: 14, color: Colors.grey.shade600)));
+          final history = _pc.searchHistory;
+          if (history.isEmpty) {
+            return Center(
+                child: Text('Type to search songs',
+                    style: GoogleFonts.inter(
+                        fontSize: 14, color: Colors.grey.shade600)));
+          }
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+                child: Row(children: [
+                  Text('RECENT',
+                      style: GoogleFonts.inter(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.grey.shade500,
+                          letterSpacing: 2.5)),
+                  const Spacer(),
+                  GestureDetector(
+                    onTap: _pc.clearSearchHistory,
+                    child: Text('CLEAR',
+                        style: GoogleFonts.inter(
+                            fontSize: 10,
+                            color: const Color(0xFFFF3B30),
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 1.5)),
+                  ),
+                ]),
+              ),
+              Expanded(
+                child: ListView.separated(
+                  padding: const EdgeInsets.only(top: 4),
+                  itemCount: history.length,
+                  separatorBuilder: (_, __) =>
+                      Divider(color: Colors.grey.shade900, height: 1, indent: 76),
+                  itemBuilder: (_, i) => _historyTile(history[i]),
+                ),
+              ),
+            ],
+          );
         }
+
         if (loading && results.isEmpty) {
           return const Center(
               child: CircularProgressIndicator(
@@ -599,27 +633,72 @@ class _PlayerScreenState extends State<PlayerScreen>
         return ListView.separated(
           padding: const EdgeInsets.only(top: 4),
           itemCount: results.length,
-          separatorBuilder: (_, __) => Divider(
-              color: Colors.grey.shade900, height: 1, indent: 76),
+          separatorBuilder: (_, __) =>
+              Divider(color: Colors.grey.shade900, height: 1, indent: 76),
           itemBuilder: (_, i) => _searchTile(results[i]),
         );
       });
+
+  Widget _historyTile(LibraryTrack t) => GestureDetector(
+        onTap: () => _playFromHistory(t),
+        behavior: HitTestBehavior.opaque,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+          child: Row(children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: t.thumbnail.isNotEmpty
+                  ? CachedNetworkImage(
+                      imageUrl: t.thumbnail,
+                      width: 48,
+                      height: 48,
+                      fit: BoxFit.cover,
+                      errorWidget: (_, __, ___) => _queueThumb())
+                  : _queueThumb(),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(t.title.toUpperCase(),
+                        style: GoogleFonts.inter(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                            letterSpacing: 0.3),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis),
+                    const SizedBox(height: 3),
+                    Text(t.artist.toUpperCase(),
+                        style: GoogleFonts.inter(
+                            fontSize: 10,
+                            color: Colors.grey.shade500,
+                            fontWeight: FontWeight.w500),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis),
+                  ]),
+            ),
+            Icon(Icons.history_rounded, color: Colors.grey.shade700, size: 18),
+          ]),
+        ),
+      );
 
   Widget _searchTile(SearchResult r) => GestureDetector(
         onTap: () => _play(r),
         behavior: HitTestBehavior.opaque,
         child: Padding(
-          padding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
           child: Row(children: [
             ClipRRect(
               borderRadius: BorderRadius.circular(6),
               child: r.thumbnail.isNotEmpty
-                  ? Image.network(r.thumbnail,
+                  ? CachedNetworkImage(
+                      imageUrl: r.thumbnail,
                       width: 48,
                       height: 48,
                       fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => _queueThumb())
+                      errorWidget: (_, __, ___) => _queueThumb())
                   : _queueThumb(),
             ),
             const SizedBox(width: 14),
@@ -648,8 +727,8 @@ class _PlayerScreenState extends State<PlayerScreen>
             if (r.duration.isNotEmpty) ...[
               const SizedBox(width: 8),
               Text(r.duration,
-                  style: GoogleFonts.inter(
-                      fontSize: 11, color: Colors.grey.shade500)),
+                  style:
+                      GoogleFonts.inter(fontSize: 11, color: Colors.grey.shade500)),
             ],
             const SizedBox(width: 8),
             GestureDetector(
@@ -664,20 +743,19 @@ class _PlayerScreenState extends State<PlayerScreen>
         ),
       );
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // MINI PLAYER
-  // ─────────────────────────────────────────────────────────────────────────
+  // ── MINI PLAYER ───────────────────────────────────────────────────────────
 
   Widget _miniPlayer() => Obx(() {
         final song = _pc.currentSong.value;
         final state = _pc.buttonState.value;
         final prog = _pc.progressBarState.value;
+        final liked = _pc.isCurrentSongLiked.value;
         final total = prog.total.inMilliseconds.toDouble();
         final cur = prog.current.inMilliseconds.toDouble();
         final frac = total > 0 ? (cur / total).clamp(0.0, 1.0) : 0.0;
 
         return Column(mainAxisSize: MainAxisSize.min, children: [
-          // red progress line
+          // Red progress line
           Container(
             height: 2,
             color: const Color(0xFF1A1A1A),
@@ -691,17 +769,18 @@ class _PlayerScreenState extends State<PlayerScreen>
             onTap: () => Navigator.of(context).push(_slideUp()),
             child: Container(
               color: Colors.black,
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 16, vertical: 12),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               child: Row(children: [
+                // Red dot
                 Container(
                   width: 8,
                   height: 8,
                   margin: const EdgeInsets.only(right: 10),
                   decoration: const BoxDecoration(
-                      color: Color(0xFFFF3B30),
-                      shape: BoxShape.circle),
+                      color: Color(0xFFFF3B30), shape: BoxShape.circle),
                 ),
+                // Title + artist
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -719,8 +798,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
-                      if (song?.artist != null &&
-                          song!.artist!.isNotEmpty)
+                      if (song?.artist != null && song!.artist!.isNotEmpty)
                         Text(song.artist!.toUpperCase(),
                             style: GoogleFonts.inter(
                                 fontSize: 10,
@@ -731,6 +809,28 @@ class _PlayerScreenState extends State<PlayerScreen>
                     ],
                   ),
                 ),
+                // Like button
+                if (song != null)
+                  GestureDetector(
+                    onTap: _pc.toggleLike,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
+                      child: AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 200),
+                        child: Icon(
+                          liked
+                              ? Icons.favorite_rounded
+                              : Icons.favorite_border_rounded,
+                          key: ValueKey(liked),
+                          color: liked
+                              ? const Color(0xFFFF3B30)
+                              : Colors.grey.shade600,
+                          size: 22,
+                        ),
+                      ),
+                    ),
+                  ),
                 _miniBtn(Icons.skip_previous_rounded, _pc.prev),
                 _miniPlayPause(state),
                 _miniBtn(Icons.skip_next_rounded, _pc.next),
@@ -743,7 +843,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   Widget _miniBtn(IconData icon, VoidCallback onTap) => GestureDetector(
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           child: Icon(icon, color: Colors.white, size: 26),
         ),
       );
@@ -751,7 +851,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   Widget _miniPlayPause(PlayButtonState state) {
     if (state == PlayButtonState.loading) {
       return const Padding(
-        padding: EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         child: SizedBox(
             width: 26,
             height: 26,
@@ -763,7 +863,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       onTap: () =>
           state == PlayButtonState.playing ? _pc.pause() : _pc.play(),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         child: Icon(
           state == PlayButtonState.playing
               ? Icons.pause_rounded
@@ -775,14 +875,13 @@ class _PlayerScreenState extends State<PlayerScreen>
     );
   }
 
-  // ── utilities ─────────────────────────────────────────────────────────────
+  // ── Utilities ─────────────────────────────────────────────────────────────
 
   PageRouteBuilder _slideUp() => PageRouteBuilder(
         pageBuilder: (_, __, ___) => const NowPlayingScreen(),
         transitionsBuilder: (_, anim, __, child) {
-          final tween =
-              Tween(begin: const Offset(0, 1), end: Offset.zero)
-                  .chain(CurveTween(curve: Curves.easeOutCubic));
+          final tween = Tween(begin: const Offset(0, 1), end: Offset.zero)
+              .chain(CurveTween(curve: Curves.easeOutCubic));
           return SlideTransition(position: anim.drive(tween), child: child);
         },
         transitionDuration: const Duration(milliseconds: 350),

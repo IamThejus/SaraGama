@@ -5,7 +5,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 
 import 'controllers/player_controller.dart';
 import 'services/audio_handler.dart';
-import 'player_screen.dart';
+import 'ui/player_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -14,6 +14,7 @@ void main() async {
   await Hive.initFlutter();
   await Hive.openBox('AppPrefs');
   await Hive.openBox('SongsUrlCache');
+  await Hive.openBox('LibraryBox');
 
   // ── Register audio handler (same as HarmonyMusic) ─────────────────────────
   final audioHandler = await initAudioService();

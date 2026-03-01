@@ -3,12 +3,13 @@
 // Header: large blurred thumbnail + title + author + track count + total duration.
 // Body: numbered track list — tap to play, long press to add to queue.
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-import './controllers/player_controller.dart';
-import './services/playlist_service.dart';
+import '../controllers/player_controller.dart';
+import '../services/playlist_service.dart';
 
 class PlaylistScreen extends StatefulWidget {
   final String playlistId;
@@ -205,9 +206,9 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
               children: [
                 // Blurred background
                 if (d.thumbnailUrl.isNotEmpty)
-                  Image.network(d.thumbnailUrl,
+                  CachedNetworkImage(imageUrl: d.thumbnailUrl,
                       fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) =>
+                      errorWidget: (_, __, ___) =>
                           Container(color: const Color(0xFF111111))),
                 // Gradient overlay
                 Container(
@@ -431,11 +432,11 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
           ClipRRect(
             borderRadius: BorderRadius.circular(5),
             child: t.thumbnailUrl.isNotEmpty
-                ? Image.network(t.thumbnailUrl,
+                ? CachedNetworkImage(imageUrl: t.thumbnailUrl,
                     width: 46,
                     height: 46,
                     fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => _thumb())
+                    errorWidget: (_, __, ___) => _thumb())
                 : _thumb(),
           ),
           const SizedBox(width: 12),
@@ -519,9 +520,9 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
               ClipRRect(
                 borderRadius: BorderRadius.circular(6),
                 child: t.thumbnailUrl.isNotEmpty
-                    ? Image.network(t.thumbnailUrl,
+                    ? CachedNetworkImage(imageUrl: t.thumbnailUrl,
                         width: 48, height: 48, fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => _thumb())
+                        errorWidget: (_, __, ___) => _thumb())
                     : _thumb(),
               ),
               const SizedBox(width: 12),
