@@ -7,10 +7,10 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:audio_service/audio_service.dart';
 
 import '../controllers/player_controller.dart';
 import '../services/playlist_service.dart';
-import '../services/recommendation_service.dart';
 
 class PlaylistScreen extends StatefulWidget {
   final String playlistId;
@@ -62,41 +62,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
   /// then fetches recommendations and appends them at the very end.
   /// This preserves playlist order: Song1 → Song2...SongN → recommendations.
   void _playAll() {
-    if (_detail == null || _detail!.tracks.isEmpty) return;
-    final tracks = _detail!.tracks;
-
-    // Clear current queue
-    _pc.audioHandler.customAction('clearQueue');
-
-    // Play first song WITHOUT recommendations (use plain playVideoId)
-    final first = tracks.first;
-    _pc.playVideoId(first.videoId,
-        title: first.title,
-        artist: first.artistLine,
-        thumbnail: first.thumbnailUrl,
-        duration: first.durationValue);
-
-    // Queue ALL remaining playlist tracks immediately after
-    for (final t in tracks.skip(1)) {
-      _pc.addToQueue(t.videoId,
-          title: t.title,
-          artist: t.artistLine,
-          thumbnail: t.thumbnailUrl,
-          duration: t.durationValue);
-    }
-
-    // Fetch recommendations in background and append AFTER the full playlist
-    RecommendationService.getRecommendations(first.videoId).then((recs) {
-      for (final r in recs) {
-        _pc.addToQueue(r.videoId,
-            title: r.title,
-            artist: r.artist,
-            thumbnail: r.thumbnail,
-            duration: r.durationValue);
-      }
-    });
-
-    _snack('Playing ${tracks.length} songs');
+    _playAllFromIndex(0);
   }
 
   /// Silently appends every track in the playlist to the current queue.
@@ -113,12 +79,12 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
   }
 
   void _playSong(PlaylistTrack t) {
-    _pc.playWithRecommendations(t.videoId,
-        title: t.title,
-        artist: t.artistLine,
-        thumbnail: t.thumbnailUrl,
-        duration: t.durationValue);
-    _snack('Playing: ${t.title}');
+    if (_detail == null || _detail!.tracks.isEmpty) return;
+    final tracks = _detail!.tracks;
+    final index = tracks.indexOf(t);
+    if (index == -1) return;
+    _playAllFromIndex(index);
+    _snack('Playing from: ${t.title}');
   }
 
   void _queueSong(PlaylistTrack t) {
@@ -136,6 +102,63 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
             duration: const Duration(seconds: 1),
             backgroundColor: const Color(0xFF1C1C1C)),
       );
+
+  /// Replace queue with full playlist (slice) and start from [startIndex].
+  Future<void> _playAllFromIndex(int startIndex) async {
+    if (_detail == null || _detail!.tracks.isEmpty) return;
+    final tracks = _detail!.tracks;
+    if (startIndex < 0 || startIndex >= tracks.length) return;
+
+    // "Play all starting from this song" → slice from startIndex onward.
+    final slice = tracks.sublist(startIndex);
+
+    // Play first of the slice, then queue the rest — this reuses existing
+    // audio handler behavior without custom actions. We await the initial
+    // play so that its internal queue reset doesn't overwrite our queued items.
+    final first = slice.first;
+    await _pc.playVideoId(
+      first.videoId,
+      title: first.title,
+      artist: first.artistLine,
+      thumbnail: first.thumbnailUrl,
+      duration: first.durationValue,
+    );
+    for (final t in slice.skip(1)) {
+      _pc.addToQueue(
+        t.videoId,
+        title: t.title,
+        artist: t.artistLine,
+        thumbnail: t.thumbnailUrl,
+        duration: t.durationValue,
+      );
+    }
+    _snack('Playing ${slice.length} songs');
+  }
+
+  /// Shuffle this playlist once, replace queue, and start playing.
+  Future<void> _shuffleAll() async {
+    if (_detail == null || _detail!.tracks.isEmpty) return;
+    final shuffled = [..._detail!.tracks]..shuffle();
+
+    final first = shuffled.first;
+    await _pc.playVideoId(
+      first.videoId,
+      title: first.title,
+      artist: first.artistLine,
+      thumbnail: first.thumbnailUrl,
+      duration: first.durationValue,
+    );
+    for (final t in shuffled.skip(1)) {
+      _pc.addToQueue(
+        t.videoId,
+        title: t.title,
+        artist: t.artistLine,
+        thumbnail: t.thumbnailUrl,
+        duration: t.durationValue,
+      );
+    }
+    _snack('Shuffled ${shuffled.length} songs');
+  }
 
   // ── build ─────────────────────────────────────────────────────────────────
 
@@ -317,34 +340,61 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
                   ),
                 ),
               ),
-              const SizedBox(width: 10),
-              // ADD ALL TO QUEUE
-              Expanded(
-                child: GestureDetector(
-                  onTap: _addAllToQueue,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    decoration: BoxDecoration(
-                      color: Colors.transparent,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.grey.shade800),
-                    ),
-                    child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.add_rounded,
-                              color: Colors.grey.shade300, size: 20),
-                          const SizedBox(width: 6),
-                          Text('ADD TO QUEUE',
-                              style: GoogleFonts.inter(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w700,
-                                  color: Colors.grey.shade300,
-                                  letterSpacing: 1.2)),
-                        ]),
+            const SizedBox(width: 10),
+            // SHUFFLE ALL
+            Expanded(
+              child: GestureDetector(
+                onTap: _shuffleAll,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1C1C1C),
+                    borderRadius: BorderRadius.circular(8),
                   ),
+                  child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.shuffle_rounded,
+                            color: Colors.grey.shade300, size: 18),
+                        const SizedBox(width: 6),
+                        Text('SHUFFLE ALL',
+                            style: GoogleFonts.inter(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.grey.shade300,
+                                letterSpacing: 1.2)),
+                      ]),
                 ),
               ),
+            ),
+            const SizedBox(width: 10),
+            // ADD ALL TO QUEUE
+            Expanded(
+              child: GestureDetector(
+                onTap: _addAllToQueue,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.transparent,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.grey.shade800),
+                  ),
+                  child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.add_rounded,
+                            color: Colors.grey.shade300, size: 20),
+                        const SizedBox(width: 6),
+                        Text('ADD TO QUEUE',
+                            style: GoogleFonts.inter(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.grey.shade300,
+                                letterSpacing: 1.2)),
+                      ]),
+                ),
+              ),
+            ),
             ]),
           ),
         ),

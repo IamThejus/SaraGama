@@ -2,6 +2,8 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 
+import 'thumb_util.dart';
+
 class TrendingPlaylist {
   final String title;
   final String playlistId;
@@ -16,7 +18,7 @@ class TrendingPlaylist {
   factory TrendingPlaylist.fromJson(Map<String, dynamic> json) {
     final thumbs = json['thumbnails'] as List? ?? [];
     // index 1 = 576px (high res), index 0 = 192px fallback
-    final url = thumbs.length > 1
+    final rawUrl = thumbs.length > 1
         ? thumbs[1]['url'] as String
         : thumbs.isNotEmpty
             ? thumbs[0]['url'] as String
@@ -24,7 +26,8 @@ class TrendingPlaylist {
     return TrendingPlaylist(
       title: json['title'] ?? '',
       playlistId: json['playlistId'] ?? '',
-      thumbnailUrl: url,
+      // Use a consistent medium/large thumbnail for cards.
+      thumbnailUrl: ThumbUtil.get(rawUrl, ThumbnailSize.medium),
     );
   }
 }
@@ -48,7 +51,7 @@ class TrendingArtist {
 
   factory TrendingArtist.fromJson(Map<String, dynamic> json) {
     final thumbs = json['thumbnails'] as List? ?? [];
-    final url = thumbs.length > 1
+    final rawUrl = thumbs.length > 1
         ? thumbs[1]['url'] as String
         : thumbs.isNotEmpty
             ? thumbs[0]['url'] as String
@@ -57,7 +60,7 @@ class TrendingArtist {
       title: json['title'] ?? '',
       browseId: json['browseId'] ?? '',
       subscribers: json['subscribers']?.toString() ?? '',
-      thumbnailUrl: url,
+      thumbnailUrl: ThumbUtil.get(rawUrl, ThumbnailSize.small),
       rank: json['rank']?.toString() ?? '',
       trend: json['trend']?.toString() ?? 'neutral',
     );

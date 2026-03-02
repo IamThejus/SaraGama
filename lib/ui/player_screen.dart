@@ -459,16 +459,54 @@ class _PlayerScreenState extends State<PlayerScreen>
             ]),
           );
         }
-        return ReorderableListView.builder(
-          padding: EdgeInsets.zero,
-          itemCount: queue.length,
-          onReorder: (o, n) => _pc.audioHandler
-              .customAction('reorderQueue', {'oldIndex': o, 'newIndex': n}),
-          itemBuilder: (_, i) {
-            final item = queue[i];
-            final cur = _pc.currentSong.value?.id == item.id;
-            return _queueRow(item, i, cur, key: ValueKey('${item.id}$i'));
-          },
+        return Column(
+          children: [
+            Padding(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              child: Row(
+                children: [
+                  Text(
+                    'UP NEXT',
+                    style: GoogleFonts.inter(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.grey.shade500,
+                      letterSpacing: 2.5,
+                    ),
+                  ),
+                  const Spacer(),
+                  GestureDetector(
+                    onTap: () => _pc.audioHandler.customAction('clearQueue'),
+                    child: Text(
+                      'CLEAR QUEUE',
+                      style: GoogleFonts.inter(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        color: const Color(0xFFFF3B30),
+                        letterSpacing: 1.5,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1, color: Color(0xFF1C1C1C)),
+            Expanded(
+              child: ReorderableListView.builder(
+                padding: EdgeInsets.zero,
+                itemCount: queue.length,
+                onReorder: (o, n) => _pc.audioHandler.customAction(
+                    'reorderQueue', {'oldIndex': o, 'newIndex': n}),
+                itemBuilder: (_, i) {
+                  final item = queue[i];
+                  final cur = _pc.currentSong.value?.id == item.id;
+                  return _queueRow(item, i, cur,
+                      key: ValueKey('${item.id}$i'));
+                },
+              ),
+            ),
+          ],
         );
       },
     );

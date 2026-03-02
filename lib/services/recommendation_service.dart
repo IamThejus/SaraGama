@@ -2,6 +2,8 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 
+import 'thumb_util.dart';
+
 class RecommendedTrack {
   final String videoId;
   final String title;
@@ -26,13 +28,18 @@ class RecommendedTrack {
     return Duration.zero;
   }
 
-  factory RecommendedTrack.fromJson(Map<String, dynamic> json) => RecommendedTrack(
-        videoId: json['video_id'] ?? '',
-        title: json['title'] ?? '',
-        artist: json['artist'] ?? '',
-        thumbnail: json['thumbnail'] ?? '',
-        duration: json['duration'] ?? '',
-      );
+  factory RecommendedTrack.fromJson(Map<String, dynamic> json) {
+    final rawThumb = json['thumbnail'] ?? '';
+    return RecommendedTrack(
+      videoId: json['video_id'] ?? '',
+      title: json['title'] ?? '',
+      artist: json['artist'] ?? '',
+      // Always store a high-quality thumbnail for recommendations so
+      // now playing + notification art look sharp.
+      thumbnail: ThumbUtil.get(rawThumb, ThumbnailSize.large),
+      duration: json['duration'] ?? '',
+    );
+  }
 }
 
 class RecommendationService {

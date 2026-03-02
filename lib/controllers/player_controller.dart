@@ -176,6 +176,28 @@ class PlayerController extends GetxController {
     });
   }
 
+  // ── Bulk playback helpers (Play All / Shuffle All) ─────────────────────────
+
+  /// Replace the current queue with [items] and start playing from [startIndex].
+  /// Used by playlist / library "Play All" and "Play from this track".
+  Future<void> playAllMedia(List<MediaItem> items, {int startIndex = 0}) async {
+    if (items.isEmpty) return;
+    final clampedIndex = startIndex.clamp(0, items.length - 1);
+    await audioHandler.customAction('playAllFrom', {
+      'items': items,
+      'startIndex': clampedIndex,
+    });
+  }
+
+  /// Replace the current queue with [items] in their given order and play.
+  /// Callers should pre-shuffle [items] when implementing "Shuffle All".
+  Future<void> playShuffledMedia(List<MediaItem> items) async {
+    if (items.isEmpty) return;
+    await audioHandler.customAction('playShuffled', {
+      'items': items,
+    });
+  }
+
   // ── Like / Unlike ─────────────────────────────────────────────────────────
 
   void toggleLike() {
@@ -185,6 +207,8 @@ class PlayerController extends GetxController {
       videoId: song.id,
       title: song.title,
       artist: song.artist ?? '',
+      // Store a high-quality thumbnail for liked songs so library views and
+      // future now playing art stay crisp.
       thumbnail: song.artUri?.toString() ?? '',
       duration: song.duration != null ? _fmtDuration(song.duration!) : '',
     );

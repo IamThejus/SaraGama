@@ -612,6 +612,126 @@ class MyAudioHandler extends BaseAudioHandler with GetxServiceMixin {
         _prefetchNext();
         break;
 
+      // ── Replace queue with given items and play from index ─────────────
+      case 'playAllFrom':
+        final rawItems = extras!['items'] as List;
+        final items = rawItems.cast<MediaItem>();
+        if (items.isEmpty) break;
+
+        var startIndex = extras['startIndex'] as int? ?? 0;
+        if (startIndex < 0 || startIndex >= items.length) {
+          startIndex = 0;
+        }
+
+        // Reset shuffle state for ordered playback
+        shuffleModeEnabled = false;
+        shuffledQueue
+          ..clear();
+        currentShuffleIndex = 0;
+        Hive.box('AppPrefs').put('shuffleMode', shuffleModeEnabled);
+
+        // Stop current playback and clear audio source list
+        await _player.stop();
+        await _playList.clear();
+
+        queue.add(items);
+        currentIndex = startIndex;
+        final currentItem = items[startIndex];
+        mediaItem.add(currentItem);
+
+        isSongLoading = true;
+        playbackState.add(playbackState.value.copyWith(
+          processingState: AudioProcessingState.loading,
+          playing: false,
+        ));
+
+        final streamInfo = await checkNGetUrl(currentItem.id);
+        if (!streamInfo.playable) {
+          currentSongUrl = null;
+          isSongLoading = false;
+          Get.find<PlayerController>().notifyError(streamInfo.statusMSG);
+          playbackState.add(playbackState.value.copyWith(
+            processingState: AudioProcessingState.error,
+            errorMessage: streamInfo.statusMSG,
+          ));
+          break;
+        }
+
+        currentSongUrl = currentItem.extras!['url'] = streamInfo.audio!.url;
+        await _playList.add(_createAudioSource(currentItem));
+
+        isSongLoading = false;
+        playbackState.add(playbackState.value.copyWith(
+          queueIndex: currentIndex,
+          processingState: AudioProcessingState.ready,
+        ));
+
+        if (loudnessNormalizationEnabled) {
+          _normalizeVolume(streamInfo.audio!.loudnessDb);
+        }
+
+        await _player.play();
+        _isTransitioning = false;
+        _prefetchNext();
+        break;
+
+      // ── Replace queue with shuffled items and play ─────────────────────
+      case 'playShuffled':
+        final rawShuffleItems = extras!['items'] as List;
+        final shuffleItems = rawShuffleItems.cast<MediaItem>();
+        if (shuffleItems.isEmpty) break;
+
+        // This is a one-shot shuffled queue; do not enable global shuffle mode.
+        shuffleModeEnabled = false;
+        shuffledQueue
+          ..clear();
+        currentShuffleIndex = 0;
+        Hive.box('AppPrefs').put('shuffleMode', shuffleModeEnabled);
+
+        await _player.stop();
+        await _playList.clear();
+
+        queue.add(shuffleItems);
+        currentIndex = 0;
+        final firstItem = shuffleItems.first;
+        mediaItem.add(firstItem);
+
+        isSongLoading = true;
+        playbackState.add(playbackState.value.copyWith(
+          processingState: AudioProcessingState.loading,
+          playing: false,
+        ));
+
+        final shuffleStream = await checkNGetUrl(firstItem.id);
+        if (!shuffleStream.playable) {
+          currentSongUrl = null;
+          isSongLoading = false;
+          Get.find<PlayerController>().notifyError(shuffleStream.statusMSG);
+          playbackState.add(playbackState.value.copyWith(
+            processingState: AudioProcessingState.error,
+            errorMessage: shuffleStream.statusMSG,
+          ));
+          break;
+        }
+
+        currentSongUrl = firstItem.extras!['url'] = shuffleStream.audio!.url;
+        await _playList.add(_createAudioSource(firstItem));
+
+        isSongLoading = false;
+        playbackState.add(playbackState.value.copyWith(
+          queueIndex: currentIndex,
+          processingState: AudioProcessingState.ready,
+        ));
+
+        if (loudnessNormalizationEnabled) {
+          _normalizeVolume(shuffleStream.audio!.loudnessDb);
+        }
+
+        await _player.play();
+        _isTransitioning = false;
+        _prefetchNext();
+        break;
+
       // ── Dispose ─────────────────────────────────────────────────────────
       case 'dispose':
         await _player.dispose();

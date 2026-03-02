@@ -6,9 +6,11 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:audio_service/audio_service.dart';
 
 import '../controllers/player_controller.dart';
 import '../services/library_service.dart';
+import 'add_to_local_playlist_screen.dart';
 
 class LocalPlaylistScreen extends StatefulWidget {
   final String title;
@@ -51,31 +53,15 @@ class _LocalPlaylistScreenState extends State<LocalPlaylistScreen> {
   }
 
   void _playSong(LibraryTrack t) {
-    _pc.playWithRecommendations(t.videoId,
-        title: t.title,
-        artist: t.artist,
-        thumbnail: t.thumbnail,
-        duration: t.durationValue);
-    _snack('Playing: ${t.title}');
+    if (_tracks.isEmpty) return;
+    final index = _tracks.indexOf(t);
+    if (index == -1) return;
+    _playAllFromIndex(index);
+    _snack('Playing from: ${t.title}');
   }
 
   void _playAll() {
-    if (_tracks.isEmpty) return;
-    _pc.audioHandler.customAction('clearQueue');
-    final first = _tracks.first;
-    _pc.playWithRecommendations(first.videoId,
-        title: first.title,
-        artist: first.artist,
-        thumbnail: first.thumbnail,
-        duration: first.durationValue);
-    for (final t in _tracks.skip(1)) {
-      _pc.addToQueue(t.videoId,
-          title: t.title,
-          artist: t.artist,
-          thumbnail: t.thumbnail,
-          duration: t.durationValue);
-    }
-    _snack('Playing ${_tracks.length} songs');
+    _playAllFromIndex(0);
   }
 
   void _addAllToQueue() {
@@ -89,6 +75,58 @@ class _LocalPlaylistScreenState extends State<LocalPlaylistScreen> {
     _snack('Added ${_tracks.length} songs to queue');
   }
 
+  /// Replace queue with this local playlist / liked list and start from index.
+  Future<void> _playAllFromIndex(int startIndex) async {
+    if (_tracks.isEmpty) return;
+    if (startIndex < 0 || startIndex >= _tracks.length) return;
+
+    final slice = _tracks.sublist(startIndex);
+
+    final first = slice.first;
+    await _pc.playVideoId(
+      first.videoId,
+      title: first.title,
+      artist: first.artist,
+      thumbnail: first.thumbnail,
+      duration: first.durationValue,
+    );
+    for (final t in slice.skip(1)) {
+      _pc.addToQueue(
+        t.videoId,
+        title: t.title,
+        artist: t.artist,
+        thumbnail: t.thumbnail,
+        duration: t.durationValue,
+      );
+    }
+    _snack('Playing ${slice.length} songs');
+  }
+
+  /// Shuffle this local playlist / liked list once and replace queue.
+  Future<void> _shuffleAll() async {
+    if (_tracks.isEmpty) return;
+    final shuffled = [..._tracks]..shuffle();
+
+    final first = shuffled.first;
+    await _pc.playVideoId(
+      first.videoId,
+      title: first.title,
+      artist: first.artist,
+      thumbnail: first.thumbnail,
+      duration: first.durationValue,
+    );
+    for (final t in shuffled.skip(1)) {
+      _pc.addToQueue(
+        t.videoId,
+        title: t.title,
+        artist: t.artist,
+        thumbnail: t.thumbnail,
+        duration: t.durationValue,
+      );
+    }
+    _snack('Shuffled ${shuffled.length} songs');
+  }
+
   void _removeTrack(LibraryTrack t) {
     if (widget.isLiked) {
       LibraryService.unlike(t.videoId);
@@ -96,6 +134,19 @@ class _LocalPlaylistScreenState extends State<LocalPlaylistScreen> {
       LibraryService.removeTrackFromPlaylist(widget.playlistId!, t.videoId);
     }
     _load();
+  }
+
+  void _openAddSongs() {
+    if (widget.isLiked) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => AddToLocalPlaylistScreen(
+          playlistId: widget.playlistId!,
+          title: widget.title,
+        ),
+      ),
+    ).then((_) => _load());
   }
 
   void _snack(String msg) => ScaffoldMessenger.of(context).showSnackBar(
@@ -124,6 +175,15 @@ class _LocalPlaylistScreenState extends State<LocalPlaylistScreen> {
               icon: const Icon(Icons.arrow_back_rounded,
                   color: Colors.white, size: 22),
             ),
+            actions: [
+              if (!widget.isLiked && widget.playlistId != null)
+                IconButton(
+                  onPressed: _openAddSongs,
+                  icon: const Icon(Icons.add_rounded,
+                      color: Colors.white, size: 22),
+                  tooltip: 'Add songs',
+                ),
+            ],
             flexibleSpace: FlexibleSpaceBar(
               collapseMode: CollapseMode.pin,
               background: Stack(fit: StackFit.expand, children: [
@@ -224,6 +284,32 @@ class _LocalPlaylistScreenState extends State<LocalPlaylistScreen> {
                                     fontWeight: FontWeight.w700,
                                     color: Colors.white,
                                     letterSpacing: 1.5)),
+                          ]),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: GestureDetector(
+                    onTap: _shuffleAll,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1C1C1C),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.shuffle_rounded,
+                                color: Colors.grey.shade300, size: 18),
+                            const SizedBox(width: 6),
+                            Text('SHUFFLE ALL',
+                                style: GoogleFonts.inter(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.grey.shade300,
+                                    letterSpacing: 1.2)),
                           ]),
                     ),
                   ),
