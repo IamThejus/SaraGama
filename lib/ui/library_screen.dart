@@ -219,37 +219,35 @@ class _LibraryScreenState extends State<LibraryScreen> {
       children: [
         // ── Header ────────────────────────────────────────────────────────
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
-          child: Row(children: [
-            Text('LIBRARY',
+          padding: const EdgeInsets.fromLTRB(16, 20, 16, 10),
+          child: Row(
+            children: [
+              Text(
+                'Your Library',
                 style: GoogleFonts.inter(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.grey.shade500,
-                    letterSpacing: 2.5)),
-            const Spacer(),
-            GestureDetector(
-              onTap: _createPlaylist,
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                    border: Border.all(color: Colors.grey.shade800),
-                    borderRadius: BorderRadius.circular(6)),
-                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(Icons.add_rounded,
-                      color: Colors.grey.shade400, size: 16),
-                  const SizedBox(width: 4),
-                  Text('NEW PLAYLIST',
-                      style: GoogleFonts.inter(
-                          fontSize: 10,
-                          color: Colors.grey.shade400,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 1.2)),
-                ]),
+                  fontSize: 26,
+                  fontWeight: FontWeight.w800,
+                  color: Colors.white,
+                  letterSpacing: -0.2,
+                ),
               ),
-            ),
-          ]),
+              const Spacer(),
+              Icon(Icons.search_rounded,
+                  color: Colors.grey.shade400, size: 22),
+              const SizedBox(width: 16),
+              Container(
+                width: 30,
+                height: 30,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF2A1A16),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: Colors.grey.shade800),
+                ),
+                child: const Icon(Icons.person_rounded,
+                    color: Colors.white, size: 18),
+              ),
+            ],
+          ),
         ),
 
         // ── Liked Songs card ──────────────────────────────────────────────
@@ -307,12 +305,24 @@ class _LibraryScreenState extends State<LibraryScreen> {
         if (_playlists.isNotEmpty) ...[
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 20, 16, 10),
-            child: Text('PLAYLISTS',
-                style: GoogleFonts.inter(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.grey.shade500,
-                    letterSpacing: 2.5)),
+            child: Row(
+              children: [
+                Text('Your Playlists',
+                    style: GoogleFonts.inter(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white)),
+                const Spacer(),
+                GestureDetector(
+                  onTap: _createPlaylist,
+                  child: Text('New Playlist',
+                      style: GoogleFonts.inter(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: const Color(0xFFFF3B30))),
+                ),
+              ],
+            ),
           ),
           ..._playlists.map((pl) => _playlistTile(pl)),
         ],

@@ -11,6 +11,7 @@ import 'package:audio_service/audio_service.dart';
 import '../controllers/player_controller.dart';
 import '../services/library_service.dart';
 import 'add_to_local_playlist_screen.dart';
+import 'widgets/mini_player_bar.dart';
 
 class LocalPlaylistScreen extends StatefulWidget {
   final String title;
@@ -163,8 +164,10 @@ class _LocalPlaylistScreenState extends State<LocalPlaylistScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
-      body: CustomScrollView(
-        slivers: [
+      body: Stack(
+        children: [
+          CustomScrollView(
+            slivers: [
           // ── Collapsing header ───────────────────────────────────────────
           SliverAppBar(
             backgroundColor: Colors.black,
@@ -388,7 +391,10 @@ class _LocalPlaylistScreenState extends State<LocalPlaylistScreen> {
               ),
             ),
 
-          const SliverToBoxAdapter(child: SizedBox(height: 80)),
+          const SliverToBoxAdapter(child: SizedBox(height: 140)),
+            ],
+          ),
+          const MiniPlayerBar(),
         ],
       ),
     );

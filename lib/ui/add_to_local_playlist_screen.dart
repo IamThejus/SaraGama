@@ -6,6 +6,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../controllers/search_controller.dart';
 import '../services/library_service.dart';
 import '../services/search_service.dart';
+import 'widgets/mini_player_bar.dart';
 
 class AddToLocalPlaylistScreen extends StatefulWidget {
   final String playlistId;
@@ -67,10 +68,16 @@ class _AddToLocalPlaylistScreenState extends State<AddToLocalPlaylistScreen> {
     return Scaffold(
       backgroundColor: Colors.black,
       body: SafeArea(
-        child: Column(
+        child: Stack(
           children: [
-            _topBar(),
-            Expanded(child: _body()),
+            Column(
+              children: [
+                _topBar(),
+                Expanded(child: _body()),
+                const SizedBox(height: 86),
+              ],
+            ),
+            const MiniPlayerBar(),
           ],
         ),
       ),
@@ -79,7 +86,13 @@ class _AddToLocalPlaylistScreenState extends State<AddToLocalPlaylistScreen> {
 
   Widget _topBar() {
     return Container(
-      color: Colors.black,
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Color(0xFF160A0A), Colors.black],
+        ),
+      ),
       padding: const EdgeInsets.fromLTRB(4, 10, 16, 8),
       child: Row(children: [
         IconButton(
@@ -126,8 +139,9 @@ class _AddToLocalPlaylistScreenState extends State<AddToLocalPlaylistScreen> {
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
           child: Container(
             decoration: BoxDecoration(
-              color: const Color(0xFF151515),
-              borderRadius: BorderRadius.circular(10),
+              color: const Color(0xFF161616),
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(color: const Color(0xFF1F1F1F)),
             ),
             padding: const EdgeInsets.symmetric(horizontal: 10),
             child: Row(
@@ -225,12 +239,18 @@ class _AddToLocalPlaylistScreenState extends State<AddToLocalPlaylistScreen> {
   Widget _resultTile(SearchResult r) {
     return Obx(() {
       final added = _addedIds.contains(r.videoId);
-      return Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      return Container(
+        margin: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: const Color(0xFF121212),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFF1F1F1F)),
+        ),
         child: Row(
           children: [
             ClipRRect(
-              borderRadius: BorderRadius.circular(6),
+              borderRadius: BorderRadius.circular(12),
               child: r.thumbnail.isNotEmpty
                   ? CachedNetworkImage(
                       imageUrl: r.thumbnail,
@@ -241,29 +261,34 @@ class _AddToLocalPlaylistScreenState extends State<AddToLocalPlaylistScreen> {
                     )
                   : _thumb(),
             ),
-            const SizedBox(width: 14),
+            const SizedBox(width: 12),
             Expanded(
               child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      r.title,
-                      style: GoogleFonts.inter(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.white),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    r.title,
+                    style: GoogleFonts.inter(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      r.artistLine,
-                      style: GoogleFonts.inter(
-                          fontSize: 10, color: Colors.grey.shade500),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    r.artistLine,
+                    style: GoogleFonts.inter(
+                      fontSize: 10,
+                      color: Colors.grey.shade500,
+                      fontWeight: FontWeight.w500,
                     ),
-                  ]),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
             ),
             if (r.duration.isNotEmpty) ...[
               const SizedBox(width: 8),
@@ -273,24 +298,37 @@ class _AddToLocalPlaylistScreenState extends State<AddToLocalPlaylistScreen> {
                     fontSize: 11, color: Colors.grey.shade600),
               ),
             ],
-            const SizedBox(width: 8),
+            const SizedBox(width: 6),
             GestureDetector(
               onTap: added ? null : () => _onAdd(r),
-              child: Padding(
-                padding: const EdgeInsets.all(6),
-                child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 180),
-                  transitionBuilder: (child, anim) => ScaleTransition(
-                    scale: anim,
-                    child: child,
-                  ),
-                  child: Icon(
-                    added ? Icons.check_rounded : Icons.add_rounded,
-                    key: ValueKey(added),
+              behavior: HitTestBehavior.opaque,
+              child: Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  color: added
+                      ? const Color(0xFF0E1A12)
+                      : const Color(0xFF1A1A1A),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
                     color: added
-                        ? const Color(0xFF34C759)
-                        : Colors.grey.shade300,
-                    size: 20,
+                        ? const Color(0xFF1E3A2A)
+                        : const Color(0xFF262626),
+                  ),
+                ),
+                child: Center(
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 180),
+                    transitionBuilder: (child, anim) =>
+                        ScaleTransition(scale: anim, child: child),
+                    child: Icon(
+                      added ? Icons.check_rounded : Icons.add_rounded,
+                      key: ValueKey(added),
+                      color: added
+                          ? const Color(0xFF34C759)
+                          : Colors.grey.shade300,
+                      size: 20,
+                    ),
                   ),
                 ),
               ),

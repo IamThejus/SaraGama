@@ -14,6 +14,7 @@ import '../services/search_service.dart';
 import 'library_screen.dart';
 import 'now_playing_screen.dart';
 import 'playlist_screen.dart';
+import 'widgets/mini_player_bar.dart';
 
 class PlayerScreen extends StatefulWidget {
   const PlayerScreen({super.key});
@@ -21,46 +22,31 @@ class PlayerScreen extends StatefulWidget {
   State<PlayerScreen> createState() => _PlayerScreenState();
 }
 
-class _PlayerScreenState extends State<PlayerScreen>
-    with SingleTickerProviderStateMixin {
+class _PlayerScreenState extends State<PlayerScreen> {
   final PlayerController _pc = Get.find();
   final SongSearchController _sc = Get.put(SongSearchController());
   final HomeController _hc = Get.put(HomeController());
 
-  late final TabController _tabs;
+  int _currentIndex = 0;
+  late final PageController _pages;
   final _searchCtrl = TextEditingController();
   final _searchFocus = FocusNode();
-  bool _searchOpen = false;
 
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: 3, vsync: this);
-    _tabs.addListener(() => setState(() {}));
+    _pages = PageController(initialPage: _currentIndex);
   }
 
   @override
   void dispose() {
-    _tabs.dispose();
+    _pages.dispose();
     _searchCtrl.dispose();
     _searchFocus.dispose();
     super.dispose();
   }
 
-  // ── Search ────────────────────────────────────────────────────────────────
-
-  void _openSearch() {
-    setState(() => _searchOpen = true);
-    Future.delayed(
-        const Duration(milliseconds: 80), () => _searchFocus.requestFocus());
-  }
-
-  void _closeSearch() {
-    _searchFocus.unfocus();
-    _searchCtrl.clear();
-    _sc.clear();
-    setState(() => _searchOpen = false);
-  }
+  // ── Search helpers ────────────────────────────────────────────────────────
 
   void _play(SearchResult r) {
     // Save to search history
@@ -76,7 +62,6 @@ class _PlayerScreenState extends State<PlayerScreen>
         artist: r.artistLine,
         thumbnail: r.thumbnail,
         duration: r.durationValue);
-    _closeSearch();
   }
 
   void _playFromHistory(LibraryTrack t) {
@@ -85,7 +70,6 @@ class _PlayerScreenState extends State<PlayerScreen>
         artist: t.artist,
         thumbnail: t.thumbnail,
         duration: t.durationValue);
-    _closeSearch();
   }
 
   void _queue(SearchResult r) {
@@ -115,112 +99,95 @@ class _PlayerScreenState extends State<PlayerScreen>
           children: [
             Column(
               children: [
-                _topBar(),
-                if (!_searchOpen) _tabBar(),
                 Expanded(
-                  child: _searchOpen
-                      ? _searchBody()
-                      : TabBarView(
-                          controller: _tabs,
-                          children: [
-                            _homeTab(),
-                            _queueTab(),
-                            const LibraryScreen(),
-                          ],
-                        ),
+                  child: PageView(
+                    controller: _pages,
+                    physics: const BouncingScrollPhysics(),
+                    onPageChanged: (i) => setState(() => _currentIndex = i),
+                    children: [
+                      _homeTab(),
+                      _searchTab(),
+                      const LibraryScreen(),
+                      _queueTab(),
+                    ],
+                  ),
                 ),
                 const SizedBox(height: 72),
               ],
             ),
-            Positioned(left: 0, right: 0, bottom: 0, child: _miniPlayer()),
+            const MiniPlayerBar(showBottomNavGap: true),
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: _bottomNav(),
+            ),
           ],
         ),
       ),
     );
   }
 
-  // ── Top bar ───────────────────────────────────────────────────────────────
+  // ── Bottom navigation ─────────────────────────────────────────────────────
 
-  Widget _topBar() {
-    if (_searchOpen) {
-      return Container(
+  Widget _bottomNav() {
+    return Container(
+      height: 56,
+      decoration: const BoxDecoration(
         color: Colors.black,
-        padding: const EdgeInsets.fromLTRB(4, 10, 16, 8),
-        child: Row(children: [
-          IconButton(
-              onPressed: _closeSearch,
-              icon: const Icon(Icons.arrow_back_rounded,
-                  color: Colors.white, size: 22)),
-          Expanded(
-            child: TextField(
-              controller: _searchCtrl,
-              focusNode: _searchFocus,
-              onChanged: _sc.onQueryChanged,
-              style: GoogleFonts.inter(color: Colors.white, fontSize: 15),
-              decoration: InputDecoration(
-                hintText: 'Search songs...',
-                hintStyle:
-                    GoogleFonts.inter(color: Colors.grey.shade600, fontSize: 15),
-                border: InputBorder.none,
-                isDense: true,
-              ),
-            ),
-          ),
-          Obx(() => _sc.isLoading.value
-              ? const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(
-                      strokeWidth: 2, color: Colors.white))
-              : _sc.query.value.isNotEmpty
-                  ? GestureDetector(
-                      onTap: () {
-                        _searchCtrl.clear();
-                        _sc.clear();
-                      },
-                      child: const Icon(Icons.close_rounded,
-                          color: Colors.grey, size: 20))
-                  : const SizedBox(width: 20)),
-        ]),
-      );
-    }
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 20, 16, 4),
-      child: Row(children: [
-        Text('MUSIC',
-            style: GoogleFonts.inter(
-                fontSize: 36,
-                fontWeight: FontWeight.w900,
-                color: Colors.white,
-                letterSpacing: -0.5)),
-        const Spacer(),
-        GestureDetector(
-            onTap: _openSearch,
-            child:
-                Icon(Icons.search_rounded, color: Colors.grey.shade500, size: 26)),
-      ]),
+        border: Border(
+          top: BorderSide(color: Color(0xFF1C1C1C), width: 1),
+        ),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: [
+          _navItem(icon: Icons.home_rounded, label: 'Home', index: 0),
+          _navItem(icon: Icons.search_rounded, label: 'Search', index: 1),
+          _navItem(icon: Icons.library_music_rounded, label: 'Library', index: 2),
+          _navItem(icon: Icons.queue_music_rounded, label: 'Queue', index: 3),
+        ],
+      ),
     );
   }
 
-  Widget _tabBar() => Container(
-        color: Colors.black,
-        child: TabBar(
-          controller: _tabs,
-          indicatorColor: const Color(0xFFFF3B30),
-          indicatorWeight: 2,
-          labelColor: Colors.white,
-          unselectedLabelColor: Colors.grey.shade600,
-          labelStyle: GoogleFonts.inter(
-              fontSize: 12, fontWeight: FontWeight.w700, letterSpacing: 1.8),
-          unselectedLabelStyle: GoogleFonts.inter(
-              fontSize: 12, fontWeight: FontWeight.w500, letterSpacing: 1.8),
-          tabs: const [
-            Tab(text: 'HOME'),
-            Tab(text: 'QUEUE'),
-            Tab(text: 'LIBRARY'),
+  Widget _navItem({
+    required IconData icon,
+    required String label,
+    required int index,
+  }) {
+    final selected = _currentIndex == index;
+    final color = selected ? const Color(0xFFFF3B30) : Colors.grey.shade500;
+    return GestureDetector(
+      onTap: () {
+        setState(() => _currentIndex = index);
+        _pages.animateToPage(
+          index,
+          duration: const Duration(milliseconds: 280),
+          curve: Curves.easeOutCubic,
+        );
+      },
+      behavior: HitTestBehavior.opaque,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: color, size: 22),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              style: GoogleFonts.inter(
+                fontSize: 10,
+                fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                color: color,
+              ),
+            ),
           ],
         ),
-      );
+      ),
+    );
+  }
 
   // ── HOME TAB ──────────────────────────────────────────────────────────────
 
@@ -240,13 +207,29 @@ class _PlayerScreenState extends State<PlayerScreen>
         backgroundColor: const Color(0xFF1C1C1C),
         onRefresh: _hc.fetchHome,
         child: ListView(
-          padding: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.only(bottom: 16),
           children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 20, 16, 6),
+              child: Row(
+                children: [
+                  Text(
+                    'Music',
+                    style: GoogleFonts.inter(
+                      fontSize: 30,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white,
+                      letterSpacing: -0.2,
+                    ),
+                  ),
+                ],
+              ),
+            ),
             _sectionLabel('DAILY TRENDING'),
             _playlistRow(data.daily),
             _sectionLabel('WEEKLY CHARTS'),
             _playlistRow(data.weekly),
-            _sectionLabel('TOP ARTISTS'),
+            _sectionLabel('TRENDING ARTISTS'),
             ...data.artists.map(_artistTile),
             const SizedBox(height: 8),
           ],
@@ -604,7 +587,84 @@ class _PlayerScreenState extends State<PlayerScreen>
             size: 20, color: Colors.grey.shade700),
       );
 
-  // ── SEARCH BODY ───────────────────────────────────────────────────────────
+  // ── SEARCH TAB ────────────────────────────────────────────────────────────
+
+  Widget _searchTab() {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
+          child: Row(
+            children: [
+              Text(
+                'Search',
+                style: GoogleFonts.inter(
+                  fontSize: 26,
+                  fontWeight: FontWeight.w800,
+                  color: Colors.white,
+                  letterSpacing: -0.2,
+                ),
+              ),
+              const Spacer(),
+              Icon(Icons.mic_none_rounded,
+                  color: Colors.grey.shade400, size: 22),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+          child: Container(
+            decoration: BoxDecoration(
+              color: const Color(0xFF161616),
+              borderRadius: BorderRadius.circular(24),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+            child: Row(
+              children: [
+                const Icon(Icons.search_rounded,
+                    color: Colors.white, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: TextField(
+                    controller: _searchCtrl,
+                    focusNode: _searchFocus,
+                    onChanged: _sc.onQueryChanged,
+                    style:
+                        GoogleFonts.inter(color: Colors.white, fontSize: 15),
+                    decoration: InputDecoration(
+                      hintText: 'Artists, songs, or podcasts',
+                      hintStyle: GoogleFonts.inter(
+                          color: Colors.grey.shade600, fontSize: 14),
+                      border: InputBorder.none,
+                      isDense: true,
+                    ),
+                  ),
+                ),
+                Obx(() => _sc.isLoading.value
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white),
+                      )
+                    : _sc.query.value.isNotEmpty
+                        ? GestureDetector(
+                            onTap: () {
+                              _searchCtrl.clear();
+                              _sc.clear();
+                            },
+                            child: const Icon(Icons.close_rounded,
+                                color: Colors.grey, size: 18),
+                          )
+                        : const SizedBox(width: 18)),
+              ],
+            ),
+          ),
+        ),
+        Expanded(child: _searchBody()),
+      ],
+    );
+  }
 
   Widget _searchBody() => Obx(() {
         final results = _sc.results;
@@ -781,149 +841,7 @@ class _PlayerScreenState extends State<PlayerScreen>
         ),
       );
 
-  // ── MINI PLAYER ───────────────────────────────────────────────────────────
-
-  Widget _miniPlayer() => Obx(() {
-        final song = _pc.currentSong.value;
-        final state = _pc.buttonState.value;
-        final prog = _pc.progressBarState.value;
-        final liked = _pc.isCurrentSongLiked.value;
-        final total = prog.total.inMilliseconds.toDouble();
-        final cur = prog.current.inMilliseconds.toDouble();
-        final frac = total > 0 ? (cur / total).clamp(0.0, 1.0) : 0.0;
-
-        return Column(mainAxisSize: MainAxisSize.min, children: [
-          // Red progress line
-          Container(
-            height: 2,
-            color: const Color(0xFF1A1A1A),
-            child: FractionallySizedBox(
-              widthFactor: frac,
-              alignment: Alignment.centerLeft,
-              child: Container(color: const Color(0xFFFF3B30)),
-            ),
-          ),
-          GestureDetector(
-            onTap: () => Navigator.of(context).push(_slideUp()),
-            child: Container(
-              color: Colors.black,
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              child: Row(children: [
-                // Red dot
-                Container(
-                  width: 8,
-                  height: 8,
-                  margin: const EdgeInsets.only(right: 10),
-                  decoration: const BoxDecoration(
-                      color: Color(0xFFFF3B30), shape: BoxShape.circle),
-                ),
-                // Title + artist
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        song != null
-                            ? song.title.toUpperCase()
-                            : 'NOTHING PLAYING',
-                        style: GoogleFonts.inter(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.white,
-                            letterSpacing: 0.3),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      if (song?.artist != null && song!.artist!.isNotEmpty)
-                        Text(song.artist!.toUpperCase(),
-                            style: GoogleFonts.inter(
-                                fontSize: 10,
-                                color: Colors.grey.shade600,
-                                fontWeight: FontWeight.w500),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis),
-                    ],
-                  ),
-                ),
-                // Like button
-                if (song != null)
-                  GestureDetector(
-                    onTap: _pc.toggleLike,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 4),
-                      child: AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 200),
-                        child: Icon(
-                          liked
-                              ? Icons.favorite_rounded
-                              : Icons.favorite_border_rounded,
-                          key: ValueKey(liked),
-                          color: liked
-                              ? const Color(0xFFFF3B30)
-                              : Colors.grey.shade600,
-                          size: 22,
-                        ),
-                      ),
-                    ),
-                  ),
-                _miniBtn(Icons.skip_previous_rounded, _pc.prev),
-                _miniPlayPause(state),
-                _miniBtn(Icons.skip_next_rounded, _pc.next),
-              ]),
-            ),
-          ),
-        ]);
-      });
-
-  Widget _miniBtn(IconData icon, VoidCallback onTap) => GestureDetector(
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          child: Icon(icon, color: Colors.white, size: 26),
-        ),
-      );
-
-  Widget _miniPlayPause(PlayButtonState state) {
-    if (state == PlayButtonState.loading) {
-      return const Padding(
-        padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        child: SizedBox(
-            width: 26,
-            height: 26,
-            child: CircularProgressIndicator(
-                color: Colors.white, strokeWidth: 2)),
-      );
-    }
-    return GestureDetector(
-      onTap: () =>
-          state == PlayButtonState.playing ? _pc.pause() : _pc.play(),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        child: Icon(
-          state == PlayButtonState.playing
-              ? Icons.pause_rounded
-              : Icons.play_arrow_rounded,
-          color: Colors.white,
-          size: 28,
-        ),
-      ),
-    );
-  }
-
   // ── Utilities ─────────────────────────────────────────────────────────────
-
-  PageRouteBuilder _slideUp() => PageRouteBuilder(
-        pageBuilder: (_, __, ___) => const NowPlayingScreen(),
-        transitionsBuilder: (_, anim, __, child) {
-          final tween = Tween(begin: const Offset(0, 1), end: Offset.zero)
-              .chain(CurveTween(curve: Curves.easeOutCubic));
-          return SlideTransition(position: anim.drive(tween), child: child);
-        },
-        transitionDuration: const Duration(milliseconds: 350),
-      );
 
   String _fmt(Duration d) {
     final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');

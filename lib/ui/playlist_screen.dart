@@ -11,6 +11,7 @@ import 'package:audio_service/audio_service.dart';
 
 import '../controllers/player_controller.dart';
 import '../services/playlist_service.dart';
+import 'widgets/mini_player_bar.dart';
 
 class PlaylistScreen extends StatefulWidget {
   final String playlistId;
@@ -166,11 +167,16 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
-      body: _loading
-          ? _loadingView()
-          : _error || _detail == null
-              ? _errorView()
-              : _contentView(),
+      body: Stack(
+        children: [
+          _loading
+              ? _loadingView()
+              : _error || _detail == null
+                  ? _errorView()
+                  : _contentView(),
+          const MiniPlayerBar(),
+        ],
+      ),
     );
   }
 
@@ -441,7 +447,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
           ),
         ),
 
-        const SliverToBoxAdapter(child: SizedBox(height: 80)),
+        const SliverToBoxAdapter(child: SizedBox(height: 140)),
       ],
     );
   }
