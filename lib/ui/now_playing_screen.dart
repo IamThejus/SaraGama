@@ -1,19 +1,56 @@
 // ui/now_playing_screen.dart
+import 'dart:ui';
 import 'package:audio_service/audio_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../controllers/lyrics_controller.dart';
 import '../controllers/player_controller.dart';
 import '../services/library_service.dart';
+import 'widgets/lyrics_button.dart';
 
-class NowPlayingScreen extends StatelessWidget {
+class NowPlayingScreen extends StatefulWidget {
   const NowPlayingScreen({super.key});
 
   @override
+  State<NowPlayingScreen> createState() => _NowPlayingScreenState();
+}
+
+class _NowPlayingScreenState extends State<NowPlayingScreen>
+    with SingleTickerProviderStateMixin {
+  final PlayerController pc = Get.find<PlayerController>();
+
+  late final AnimationController _arrowController;
+  late final Animation<double> _arrowOffset;
+
+  @override
+  void initState() {
+    super.initState();
+    _arrowController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    )..repeat(reverse: true);
+    _arrowOffset = Tween<double>(begin: 0, end: -6).animate(
+      CurvedAnimation(parent: _arrowController, curve: Curves.easeInOut),
+    );
+
+    // Feed playback position into LyricsController
+    ever(pc.progressBarState, (state) {
+      Get.find<LyricsController>().updatePlaybackPosition(state.current);
+    });
+  }
+
+  @override
+  void dispose() {
+    _arrowController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final pc = Get.find<PlayerController>();
     final screenW = MediaQuery.of(context).size.width;
     final artSize = screenW * 0.78;
 
@@ -39,7 +76,6 @@ class NowPlayingScreen extends StatelessWidget {
                         color: Colors.grey.shade500,
                         letterSpacing: 2.5)),
                 const Spacer(),
-                // ⋮ menu
                 Obx(() {
                   final song = pc.currentSong.value;
                   return IconButton(
@@ -55,7 +91,7 @@ class NowPlayingScreen extends StatelessWidget {
 
             const Spacer(),
 
-            // ── Artwork with red ring ─────────────────────────────────────
+            // ── Artwork ───────────────────────────────────────────────────
             Obx(() {
               final song = pc.currentSong.value;
               final artUrl = song?.artUri?.toString() ?? '';
@@ -74,14 +110,12 @@ class NowPlayingScreen extends StatelessWidget {
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         border: Border.all(
-                          color:
-                              const Color(0xFFFF3B30).withOpacity(0.55),
+                          color: const Color(0xFFFF3B30).withOpacity(0.55),
                           width: 2,
                         ),
                         boxShadow: [
                           BoxShadow(
-                            color:
-                                const Color(0xFFFF3B30).withOpacity(0.18),
+                            color: const Color(0xFFFF3B30).withOpacity(0.18),
                             blurRadius: 40,
                             spreadRadius: 8,
                           ),
@@ -142,7 +176,6 @@ class NowPlayingScreen extends StatelessWidget {
                           ),
                         ]),
                   ),
-                  // Like button
                   GestureDetector(
                     onTap: pc.toggleLike,
                     child: Padding(
@@ -171,10 +204,10 @@ class NowPlayingScreen extends StatelessWidget {
             // ── Progress bar ──────────────────────────────────────────────
             Obx(() {
               final state = pc.progressBarState.value;
-              final total =
-                  state.total.inSeconds.toDouble();
-              final current =
-                  state.current.inSeconds.toDouble().clamp(0.0, total > 0 ? total : 1.0);
+              final total = state.total.inSeconds.toDouble();
+              final current = state.current.inSeconds
+                  .toDouble()
+                  .clamp(0.0, total > 0 ? total : 1.0);
               return Column(children: [
                 SliderTheme(
                   data: SliderTheme.of(context).copyWith(
@@ -190,8 +223,7 @@ class NowPlayingScreen extends StatelessWidget {
                     value: current,
                     min: 0,
                     max: total > 0 ? total : 1,
-                    onChanged: (v) =>
-                        pc.seek(Duration(seconds: v.toInt())),
+                    onChanged: (v) => pc.seek(Duration(seconds: v.toInt())),
                   ),
                 ),
                 Padding(
@@ -201,21 +233,19 @@ class NowPlayingScreen extends StatelessWidget {
                     children: [
                       Text(_fmt(state.current),
                           style: GoogleFonts.inter(
-                              fontSize: 12,
-                              color: Colors.grey.shade600)),
+                              fontSize: 12, color: Colors.grey.shade600)),
                       Text(_fmt(state.total),
                           style: GoogleFonts.inter(
-                              fontSize: 12,
-                              color: Colors.grey.shade600)),
+                              fontSize: 12, color: Colors.grey.shade600)),
                     ],
                   ),
                 ),
               ]);
             }),
 
-            const SizedBox(height: 12),
+            const SizedBox(height: 20),
 
-            // ── Controls ──────────────────────────────────────────────────
+            // ── Playback controls ─────────────────────────────────────────
             Obx(() {
               final state = pc.buttonState.value;
               return Padding(
@@ -285,14 +315,20 @@ class NowPlayingScreen extends StatelessWidget {
 
             // ── Bottom actions ────────────────────────────────────────────
             Padding(
-              padding: const EdgeInsets.fromLTRB(0, 0, 0, 8),
+              padding: const EdgeInsets.fromLTRB(28, 0, 28, 8),
               child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   _bottomAction(
                     icon: Icons.queue_music_rounded,
                     label: 'UP NEXT',
                     onTap: () => Navigator.of(context).pop(),
+                  ),
+                  const LyricsButton(),
+                  _bottomAction(
+                    icon: Icons.share_rounded,
+                    label: 'SHARE',
+                    onTap: () {},
                   ),
                 ],
               ),
@@ -305,7 +341,7 @@ class NowPlayingScreen extends StatelessWidget {
     );
   }
 
-  // ── More menu (⋮) ─────────────────────────────────────────────────────────
+  // ── More menu ─────────────────────────────────────────────────────────────
 
   void _showMoreMenu(
       BuildContext context, PlayerController pc, MediaItem song) {
@@ -325,7 +361,6 @@ class NowPlayingScreen extends StatelessWidget {
                 borderRadius: BorderRadius.circular(2)),
           ),
           const SizedBox(height: 12),
-          // Song info header
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
             child: Row(children: [
@@ -337,8 +372,7 @@ class NowPlayingScreen extends StatelessWidget {
                         width: 46,
                         height: 46,
                         fit: BoxFit.cover,
-                        errorWidget: (_, __, ___) =>
-                            _miniThumb(),
+                        errorWidget: (_, __, ___) => _miniThumb(),
                       )
                     : _miniThumb(),
               ),
@@ -356,8 +390,7 @@ class NowPlayingScreen extends StatelessWidget {
                           overflow: TextOverflow.ellipsis),
                       Text(song.artist ?? '',
                           style: GoogleFonts.inter(
-                              fontSize: 11,
-                              color: Colors.grey.shade500),
+                              fontSize: 11, color: Colors.grey.shade500),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis),
                     ]),
@@ -365,7 +398,6 @@ class NowPlayingScreen extends StatelessWidget {
             ]),
           ),
           Divider(color: Colors.grey.shade900, height: 20),
-          // Add to playlist
           ListTile(
             leading: Icon(Icons.playlist_add_rounded,
                 color: Colors.grey.shade400, size: 22),
@@ -380,7 +412,6 @@ class NowPlayingScreen extends StatelessWidget {
             },
             dense: true,
           ),
-          // Like / Unlike
           Obx(() {
             final liked = pc.isCurrentSongLiked.value;
             return ListTile(
@@ -413,7 +444,6 @@ class NowPlayingScreen extends StatelessWidget {
 
   void _showAddToPlaylist(
       BuildContext context, PlayerController pc, MediaItem song) {
-    final playlists = LibraryService.getPlaylists();
     final track = LibraryTrack(
       videoId: song.id,
       title: song.title,
@@ -453,7 +483,6 @@ class NowPlayingScreen extends StatelessWidget {
                       color: Colors.white)),
               const SizedBox(height: 8),
               Divider(color: Colors.grey.shade900),
-              // Create new playlist
               ListTile(
                 leading: Container(
                   width: 46,
@@ -476,7 +505,6 @@ class NowPlayingScreen extends StatelessWidget {
                 dense: true,
               ),
               Divider(color: Colors.grey.shade900, height: 8),
-              // Existing playlists
               Expanded(
                 child: fresh.isEmpty
                     ? Center(
@@ -512,19 +540,15 @@ class NowPlayingScreen extends StatelessWidget {
                                     fontSize: 11,
                                     color: Colors.grey.shade600)),
                             onTap: () {
-                              LibraryService.addTrackToPlaylist(
-                                  pl.id, track);
+                              LibraryService.addTrackToPlaylist(pl.id, track);
                               Navigator.pop(ctx);
                               ScaffoldMessenger.of(context)
                                   .showSnackBar(SnackBar(
-                                content: Text(
-                                    'Added to ${pl.name}',
-                                    style: GoogleFonts.inter(
-                                        fontSize: 12)),
-                                backgroundColor:
-                                    const Color(0xFF1C1C1C),
-                                duration:
-                                    const Duration(seconds: 1),
+                                content: Text('Added to ${pl.name}',
+                                    style:
+                                        GoogleFonts.inter(fontSize: 12)),
+                                backgroundColor: const Color(0xFF1C1C1C),
+                                duration: const Duration(seconds: 1),
                               ));
                             },
                             dense: true,
@@ -592,8 +616,7 @@ class NowPlayingScreen extends StatelessWidget {
             child: GestureDetector(
               onTap: () {
                 if (name.trim().isEmpty) return;
-                final pl =
-                    LibraryService.createPlaylist(name.trim());
+                final pl = LibraryService.createPlaylist(name.trim());
                 LibraryService.addTrackToPlaylist(pl.id, track);
                 Navigator.pop(context);
                 ScaffoldMessenger.of(context).showSnackBar(SnackBar(

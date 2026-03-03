@@ -22,36 +22,29 @@ class PlayerController extends GetxController {
   final AudioHandler audioHandler;
   PlayerController({required this.audioHandler});
 
-  final currentSong    = Rxn<MediaItem>();
-  final buttonState    = Rx<PlayButtonState>(PlayButtonState.paused);
-  final progressBarState = Rx<ProgressBarState>(
+  final currentSong        = Rxn<MediaItem>();
+  final buttonState        = Rx<PlayButtonState>(PlayButtonState.paused);
+  final progressBarState   = Rx<ProgressBarState>(
     const ProgressBarState(
       current: Duration.zero, buffered: Duration.zero, total: Duration.zero,
     ),
   );
-  final errorMessage      = RxnString();
-  final isLoopEnabled     = false.obs;
-  final isShuffleEnabled  = false.obs;
-  final isHighQuality     = true.obs;
-  final cacheSongs        = false.obs;
-
-  // ── Liked state (reactive so mini player / now playing update instantly) ─
+  final errorMessage       = RxnString();
+  final isLoopEnabled      = false.obs;
+  final isShuffleEnabled   = false.obs;
+  final isHighQuality      = true.obs;
+  final cacheSongs         = false.obs;
   final isCurrentSongLiked = false.obs;
-
-  // ── Search history ────────────────────────────────────────────────────────
-  final searchHistory = <LibraryTrack>[].obs;
+  final searchHistory      = <LibraryTrack>[].obs;
 
   @override
   void onInit() {
-    // Load search history from Hive
     _loadSearchHistory();
 
     audioHandler.mediaItem.listen((item) {
       currentSong.value = item;
       if (item != null) {
-        // Update liked state reactively
         isCurrentSongLiked.value = LibraryService.isLiked(item.id);
-        // Auto-save session whenever song changes
         _saveSession();
       }
     });
@@ -79,7 +72,6 @@ class PlayerController extends GetxController {
     final q = Hive.box('AppPrefs').get('streamingQuality') ?? 1;
     isHighQuality.value = q == 1;
 
-    // Restore last session after a short delay (let audio service init)
     Future.delayed(const Duration(milliseconds: 500), _restoreSession);
 
     super.onInit();
@@ -115,6 +107,8 @@ class PlayerController extends GetxController {
     isHighQuality.value = !isHighQuality.value;
     Hive.box('AppPrefs').put('streamingQuality', isHighQuality.value ? 1 : 0);
   }
+
+  void clearQueue() => audioHandler.customAction('clearQueue');
 
   // ── Core play methods ─────────────────────────────────────────────────────
 
@@ -155,7 +149,6 @@ class PlayerController extends GetxController {
     await audioHandler.addQueueItem(song);
   }
 
-  /// Plays song immediately + fetches recommendations in background.
   Future<void> playWithRecommendations(
     String videoId, {
     String? title,
@@ -176,10 +169,6 @@ class PlayerController extends GetxController {
     });
   }
 
-  // ── Bulk playback helpers (Play All / Shuffle All) ─────────────────────────
-
-  /// Replace the current queue with [items] and start playing from [startIndex].
-  /// Used by playlist / library "Play All" and "Play from this track".
   Future<void> playAllMedia(List<MediaItem> items, {int startIndex = 0}) async {
     if (items.isEmpty) return;
     final clampedIndex = startIndex.clamp(0, items.length - 1);
@@ -189,13 +178,9 @@ class PlayerController extends GetxController {
     });
   }
 
-  /// Replace the current queue with [items] in their given order and play.
-  /// Callers should pre-shuffle [items] when implementing "Shuffle All".
   Future<void> playShuffledMedia(List<MediaItem> items) async {
     if (items.isEmpty) return;
-    await audioHandler.customAction('playShuffled', {
-      'items': items,
-    });
+    await audioHandler.customAction('playShuffled', {'items': items});
   }
 
   // ── Like / Unlike ─────────────────────────────────────────────────────────
@@ -207,8 +192,6 @@ class PlayerController extends GetxController {
       videoId: song.id,
       title: song.title,
       artist: song.artist ?? '',
-      // Store a high-quality thumbnail for liked songs so library views and
-      // future now playing art stay crisp.
       thumbnail: song.artUri?.toString() ?? '',
       duration: song.duration != null ? _fmtDuration(song.duration!) : '',
     );
@@ -220,7 +203,7 @@ class PlayerController extends GetxController {
 
   void addToSearchHistory(LibraryTrack track) {
     final list = List<LibraryTrack>.from(searchHistory);
-    list.removeWhere((t) => t.videoId == track.videoId); // no duplicates
+    list.removeWhere((t) => t.videoId == track.videoId);
     list.insert(0, track);
     if (list.length > 10) list.removeLast();
     searchHistory.assignAll(list);
@@ -250,7 +233,7 @@ class PlayerController extends GetxController {
 
   void _saveSession() {
     try {
-      final q = audioHandler.queue.value;
+      final q   = audioHandler.queue.value;
       final idx = audioHandler.playbackState.value.queueIndex ?? 0;
       final pos = progressBarState.value.current.inMilliseconds;
       if (q.isEmpty) return;

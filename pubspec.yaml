@@ -1,5 +1,5 @@
-name: ytplayer
-description: A YouTube audio player using HarmonyMusic architecture.
+name: saragama
+description: A modern, minimal YouTube audio player.
 publish_to: 'none'
 version: 1.0.0+1
 
@@ -40,5 +40,15 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
 
+  flutter_launcher_icons: ^0.14.0
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/app_icon.png"
+  remove_alpha_ios: true
+
 flutter:
   uses-material-design: true
+  assets:
+    - assets/app_icon.png

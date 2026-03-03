@@ -29,8 +29,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   int _currentIndex = 0;
   late final PageController _pages;
-  final _searchCtrl = TextEditingController();
+  final _searchCtrl  = TextEditingController();
   final _searchFocus = FocusNode();
+  final RxString _homeFilter = 'ALL'.obs;
 
   @override
   void initState() {
@@ -49,35 +50,34 @@ class _PlayerScreenState extends State<PlayerScreen> {
   // ── Search helpers ────────────────────────────────────────────────────────
 
   void _play(SearchResult r) {
-    // Save to search history
     _pc.addToSearchHistory(LibraryTrack(
-      videoId: r.videoId,
-      title: r.title,
-      artist: r.artistLine,
+      videoId:   r.videoId,
+      title:     r.title,
+      artist:    r.artistLine,
       thumbnail: r.thumbnail,
-      duration: r.duration,
+      duration:  r.duration,
     ));
     _pc.playWithRecommendations(r.videoId,
-        title: r.title,
-        artist: r.artistLine,
+        title:     r.title,
+        artist:    r.artistLine,
         thumbnail: r.thumbnail,
-        duration: r.durationValue);
+        duration:  r.durationValue);
   }
 
   void _playFromHistory(LibraryTrack t) {
     _pc.playWithRecommendations(t.videoId,
-        title: t.title,
-        artist: t.artist,
+        title:     t.title,
+        artist:    t.artist,
         thumbnail: t.thumbnail,
-        duration: t.durationValue);
+        duration:  t.durationValue);
   }
 
   void _queue(SearchResult r) {
     _pc.addToQueue(r.videoId,
-        title: r.title,
-        artist: r.artistLine,
+        title:     r.title,
+        artist:    r.artistLine,
         thumbnail: r.thumbnail,
-        duration: r.durationValue);
+        duration:  r.durationValue);
     _snack('Added: ${r.title}');
   }
 
@@ -117,9 +117,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
             ),
             const MiniPlayerBar(showBottomNavGap: true),
             Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
+              left: 0, right: 0, bottom: 0,
               child: _bottomNav(),
             ),
           ],
@@ -135,17 +133,15 @@ class _PlayerScreenState extends State<PlayerScreen> {
       height: 56,
       decoration: const BoxDecoration(
         color: Colors.black,
-        border: Border(
-          top: BorderSide(color: Color(0xFF1C1C1C), width: 1),
-        ),
+        border: Border(top: BorderSide(color: Color(0xFF1C1C1C), width: 1)),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
-          _navItem(icon: Icons.home_rounded, label: 'Home', index: 0),
-          _navItem(icon: Icons.search_rounded, label: 'Search', index: 1),
-          _navItem(icon: Icons.library_music_rounded, label: 'Library', index: 2),
-          _navItem(icon: Icons.queue_music_rounded, label: 'Queue', index: 3),
+          _navItem(icon: Icons.home_rounded,          label: 'Home',    index: 0),
+          _navItem(icon: Icons.search_rounded,         label: 'Search',  index: 1),
+          _navItem(icon: Icons.library_music_rounded,  label: 'Library', index: 2),
+          _navItem(icon: Icons.queue_music_rounded,    label: 'Queue',   index: 3),
         ],
       ),
     );
@@ -161,30 +157,22 @@ class _PlayerScreenState extends State<PlayerScreen> {
     return GestureDetector(
       onTap: () {
         setState(() => _currentIndex = index);
-        _pages.animateToPage(
-          index,
-          duration: const Duration(milliseconds: 280),
-          curve: Curves.easeOutCubic,
-        );
+        _pages.animateToPage(index,
+            duration: const Duration(milliseconds: 280),
+            curve: Curves.easeOutCubic);
       },
       behavior: HitTestBehavior.opaque,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, color: color, size: 22),
-            const SizedBox(height: 2),
-            Text(
-              label,
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Icon(icon, color: color, size: 22),
+          const SizedBox(height: 2),
+          Text(label,
               style: GoogleFonts.inter(
-                fontSize: 10,
-                fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                color: color,
-              ),
-            ),
-          ],
-        ),
+                  fontSize: 10,
+                  fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                  color: color)),
+        ]),
       ),
     );
   }
@@ -201,54 +189,317 @@ class _PlayerScreenState extends State<PlayerScreen> {
       if (_hc.hasError.value || _hc.homeData.value == null) {
         return _errorState();
       }
-      final data = _hc.homeData.value!;
+
+      final data   = _hc.homeData.value!;
+      final filter = _homeFilter.value;
+
+      final List<TrendingPlaylist> displayList = filter == 'DAILY'
+          ? data.daily
+          : filter == 'WEEKLY'
+              ? data.weekly
+              : [...data.daily, ...data.weekly];
+
       return RefreshIndicator(
         color: const Color(0xFFFF3B30),
         backgroundColor: const Color(0xFF1C1C1C),
         onRefresh: _hc.fetchHome,
         child: ListView(
-          padding: const EdgeInsets.only(bottom: 16),
+          padding: const EdgeInsets.only(bottom: 120),
           children: [
+            // ── Header ───────────────────────────────────────────────
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 20, 16, 6),
+              padding: const EdgeInsets.fromLTRB(16, 24, 16, 0),
               child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  Text(
-                    'Music',
-                    style: GoogleFonts.inter(
-                      fontSize: 30,
-                      fontWeight: FontWeight.w800,
-                      color: Colors.white,
-                      letterSpacing: -0.2,
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _greeting(),
+                          style: GoogleFonts.inter(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: const Color(0xFFFF3B30),
+                            letterSpacing: 2.5,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'SARAGAMA',
+                          style: GoogleFonts.inter(
+                            fontSize: 32,
+                            fontWeight: FontWeight.w900,
+                            color: Colors.white,
+                            letterSpacing: -0.5,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  GestureDetector(
+                    onTap: _showSettingsSheet,
+                    child: Container(
+                      width: 38,
+                      height: 38,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1A1A1A),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFF2A2A2A)),
+                      ),
+                      child: const Icon(Icons.settings_rounded,
+                          color: Colors.white, size: 18),
                     ),
                   ),
                 ],
               ),
             ),
-            _sectionLabel('DAILY TRENDING'),
-            _playlistRow(data.daily),
-            _sectionLabel('WEEKLY CHARTS'),
-            _playlistRow(data.weekly),
-            _sectionLabel('TRENDING ARTISTS'),
-            ...data.artists.map(_artistTile),
-            const SizedBox(height: 8),
+
+            const SizedBox(height: 20),
+
+            // ── Filter chips ─────────────────────────────────────────
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Obx(() => Row(
+                    children: ['ALL', 'DAILY', 'WEEKLY'].map((f) {
+                      final active = _homeFilter.value == f;
+                      return GestureDetector(
+                        onTap: () => _homeFilter.value = f,
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 180),
+                          margin: const EdgeInsets.only(right: 8),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 7),
+                          decoration: BoxDecoration(
+                            color: active
+                                ? const Color(0xFFFF3B30)
+                                : const Color(0xFF1A1A1A),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                              color: active
+                                  ? const Color(0xFFFF3B30)
+                                  : const Color(0xFF2A2A2A),
+                            ),
+                          ),
+                          child: Text(
+                            f,
+                            style: GoogleFonts.inter(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: active
+                                  ? Colors.white
+                                  : Colors.grey.shade500,
+                              letterSpacing: 1.5,
+                            ),
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  )),
+            ),
+
+            const SizedBox(height: 28),
+
+            // ── Section title ────────────────────────────────────────
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: Row(children: [
+                Container(
+                  width: 3,
+                  height: 20,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFF3B30),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  filter == 'ALL'
+                      ? 'TRENDING NOW'
+                      : filter == 'DAILY'
+                          ? 'DAILY TRENDING'
+                          : 'WEEKLY CHARTS',
+                  style: GoogleFonts.inter(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  '${displayList.length} playlists',
+                  style: GoogleFonts.inter(
+                    fontSize: 11,
+                    color: Colors.grey.shade600,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ]),
+            ),
+
+            // ── 2-column grid ────────────────────────────────────────
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: _playlistGrid(displayList),
+            ),
           ],
         ),
       );
     });
   }
 
+  Widget _playlistGrid(List<TrendingPlaylist> list) {
+    if (list.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(40),
+          child: Text('No playlists available',
+              style: GoogleFonts.inter(
+                  fontSize: 13, color: Colors.grey.shade700)),
+        ),
+      );
+    }
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        crossAxisSpacing: 12,
+        mainAxisSpacing: 12,
+        childAspectRatio: 0.82,
+      ),
+      itemCount: list.length,
+      itemBuilder: (_, i) => _playlistGridCard(list[i], i),
+    );
+  }
+
+  Widget _playlistGridCard(TrendingPlaylist p, int index) {
+    final isFirst = index == 0;
+    return GestureDetector(
+      onTap: () => Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => PlaylistScreen(
+          playlistId:    p.playlistId,
+          playlistTitle: p.title,
+          thumbnailUrl:  p.thumbnailUrl,
+        ),
+      )),
+      child: Container(
+        decoration: BoxDecoration(
+          color: const Color(0xFF111111),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: isFirst
+                ? const Color(0xFFFF3B30).withOpacity(0.4)
+                : const Color(0xFF1F1F1F),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: ClipRRect(
+                borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(13)),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    p.thumbnailUrl.isNotEmpty
+                        ? CachedNetworkImage(
+                            imageUrl: p.thumbnailUrl,
+                            fit: BoxFit.cover,
+                            errorWidget: (_, __, ___) =>
+                                _gridThumbPlaceholder(),
+                          )
+                        : _gridThumbPlaceholder(),
+                    if (isFirst)
+                      Container(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              const Color(0xFFFF3B30).withOpacity(0.15),
+                              Colors.transparent,
+                            ],
+                          ),
+                        ),
+                      ),
+                    Positioned(
+                      bottom: 0, left: 0, right: 0,
+                      child: Container(
+                        height: 40,
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.bottomCenter,
+                            end: Alignment.topCenter,
+                            colors: [
+                              Colors.black.withOpacity(0.7),
+                              Colors.transparent,
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      bottom: 8, right: 8,
+                      child: Container(
+                        width: 32,
+                        height: 32,
+                        decoration: BoxDecoration(
+                          color: isFirst
+                              ? const Color(0xFFFF3B30)
+                              : Colors.white.withOpacity(0.15),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.play_arrow_rounded,
+                            color: Colors.white, size: 20),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
+              child: Text(
+                p.title,
+                style: GoogleFonts.inter(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: isFirst ? Colors.white : Colors.grey.shade300,
+                  height: 1.3,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _gridThumbPlaceholder() => Container(
+        color: const Color(0xFF1C1C1C),
+        child: Icon(Icons.library_music_rounded,
+            size: 40, color: Colors.grey.shade800),
+      );
+
   Widget _errorState() => Center(
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           Icon(Icons.wifi_off_rounded, size: 48, color: Colors.grey.shade800),
           const SizedBox(height: 12),
           Text('Could not load charts',
-              style: GoogleFonts.inter(fontSize: 14, color: Colors.grey.shade600)),
+              style: GoogleFonts.inter(
+                  fontSize: 14, color: Colors.grey.shade600)),
           const SizedBox(height: 16),
           GestureDetector(
             onTap: _hc.fetchHome,
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 20, vertical: 10),
               decoration: BoxDecoration(
                   border: Border.all(color: Colors.grey.shade800),
                   borderRadius: BorderRadius.circular(8)),
@@ -263,159 +514,95 @@ class _PlayerScreenState extends State<PlayerScreen> {
         ]),
       );
 
-  Widget _sectionLabel(String text) => Padding(
-        padding: const EdgeInsets.fromLTRB(16, 22, 16, 12),
-        child: Text(text,
-            style: GoogleFonts.inter(
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-                color: Colors.grey.shade500,
-                letterSpacing: 2.5)),
-      );
-
-  Widget _playlistRow(List<TrendingPlaylist> list) => SizedBox(
-        height: 168,
-        child: ListView.separated(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          itemCount: list.length,
-          separatorBuilder: (_, __) => const SizedBox(width: 12),
-          itemBuilder: (_, i) => _playlistCard(list[i]),
-        ),
-      );
-
-  Widget _playlistCard(TrendingPlaylist p) => GestureDetector(
-        onTap: () => Navigator.of(context).push(MaterialPageRoute(
-          builder: (_) => PlaylistScreen(
-            playlistId: p.playlistId,
-            playlistTitle: p.title,
-            thumbnailUrl: p.thumbnailUrl,
-          ),
-        )),
-        child: SizedBox(
-          width: 132,
-          child:
-              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: p.thumbnailUrl.isNotEmpty
-                  ? CachedNetworkImage(
-                      imageUrl: p.thumbnailUrl,
-                      width: 132,
-                      height: 132,
-                      fit: BoxFit.cover,
-                      errorWidget: (_, __, ___) => _playlistPlaceholder(132),
-                    )
-                  : _playlistPlaceholder(132),
-            ),
-            const SizedBox(height: 6),
-            Text(p.title,
-                style: GoogleFonts.inter(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.grey.shade300),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis),
-          ]),
-        ),
-      );
-
-  Widget _playlistPlaceholder(double size) => Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-          color: const Color(0xFF1C1C1C),
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Icon(Icons.library_music_rounded,
-            size: size * 0.32, color: Colors.grey.shade800),
-      );
-
-  Widget _artistTile(TrendingArtist a) {
-    Widget trendWidget;
-    if (a.trend == 'up') {
-      trendWidget = Row(mainAxisSize: MainAxisSize.min, children: [
-        const Icon(Icons.arrow_drop_up_rounded,
-            color: Color(0xFF34C759), size: 20),
-        Text('UP',
-            style: GoogleFonts.inter(
-                fontSize: 9,
-                color: const Color(0xFF34C759),
-                fontWeight: FontWeight.w700,
-                letterSpacing: 1)),
-      ]);
-    } else if (a.trend == 'down') {
-      trendWidget = Row(mainAxisSize: MainAxisSize.min, children: [
-        const Icon(Icons.arrow_drop_down_rounded,
-            color: Color(0xFFFF3B30), size: 20),
-        Text('DN',
-            style: GoogleFonts.inter(
-                fontSize: 9,
-                color: const Color(0xFFFF3B30),
-                fontWeight: FontWeight.w700,
-                letterSpacing: 1)),
-      ]);
-    } else {
-      trendWidget =
-          Icon(Icons.remove_rounded, color: Colors.grey.shade700, size: 14);
-    }
-
-    return Container(
-      decoration: BoxDecoration(
-          border: Border(
-              bottom: BorderSide(color: Colors.grey.shade900, width: 0.5))),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      child: Row(children: [
-        SizedBox(
-          width: 30,
-          child: Text(a.rank,
-              style: GoogleFonts.inter(
-                  fontSize: 12,
-                  color: Colors.grey.shade600,
-                  fontWeight: FontWeight.w700),
-              textAlign: TextAlign.center),
-        ),
-        const SizedBox(width: 10),
-        ClipOval(
-          child: a.thumbnailUrl.isNotEmpty
-              ? CachedNetworkImage(
-                  imageUrl: a.thumbnailUrl,
-                  width: 46,
-                  height: 46,
-                  fit: BoxFit.cover,
-                  errorWidget: (_, __, ___) => _artistPlaceholder())
-              : _artistPlaceholder(),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(a.title,
-                    style: GoogleFonts.inter(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.white),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis),
-                const SizedBox(height: 2),
-                Text('${a.subscribers} subscribers',
-                    style: GoogleFonts.inter(
-                        fontSize: 10, color: Colors.grey.shade600)),
-              ]),
-        ),
-        const SizedBox(width: 8),
-        trendWidget,
-      ]),
-    );
+  String _greeting() {
+    final h = DateTime.now().hour;
+    if (h < 12) return 'GOOD MORNING';
+    if (h < 17) return 'GOOD AFTERNOON';
+    return 'GOOD EVENING';
   }
 
-  Widget _artistPlaceholder() => Container(
-        width: 46,
-        height: 46,
-        color: const Color(0xFF1C1C1C),
-        child: Icon(Icons.person_rounded, size: 24, color: Colors.grey.shade700),
-      );
+  void _showSettingsSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF111111),
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      builder: (_) => Padding(
+        padding: const EdgeInsets.fromLTRB(0, 12, 0, 36),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Container(
+            width: 36, height: 4,
+            decoration: BoxDecoration(
+                color: Colors.grey.shade700,
+                borderRadius: BorderRadius.circular(2)),
+          ),
+          const SizedBox(height: 20),
+          Text('Settings',
+              style: GoogleFonts.inter(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white)),
+          const SizedBox(height: 4),
+          Divider(color: Colors.grey.shade900),
+          // Streaming quality
+          Obx(() {
+            final hq = _pc.isHighQuality.value;
+            return ListTile(
+              leading: Icon(
+                  hq ? Icons.high_quality_rounded : Icons.sd_rounded,
+                  color: const Color(0xFFFF3B30), size: 22),
+              title: Text('Streaming Quality',
+                  style: GoogleFonts.inter(
+                      fontSize: 14,
+                      color: Colors.white,
+                      fontWeight: FontWeight.w500)),
+              subtitle: Text(hq ? 'High Quality' : 'Data Saver',
+                  style: GoogleFonts.inter(
+                      fontSize: 11, color: Colors.grey.shade600)),
+              trailing: Switch(
+                value: hq,
+                onChanged: (_) => _pc.toggleQuality(),
+                activeColor: const Color(0xFFFF3B30),
+              ),
+              dense: true,
+            );
+          }),
+          // Clear search history
+          ListTile(
+            leading: Icon(Icons.history_rounded,
+                color: Colors.grey.shade400, size: 22),
+            title: Text('Clear Search History',
+                style: GoogleFonts.inter(
+                    fontSize: 14,
+                    color: Colors.white,
+                    fontWeight: FontWeight.w500)),
+            onTap: () {
+              _pc.clearSearchHistory();
+              Navigator.pop(context);
+              _snack('Search history cleared');
+            },
+            dense: true,
+          ),
+          // Clear queue
+          ListTile(
+            leading: Icon(Icons.queue_music_rounded,
+                color: Colors.grey.shade400, size: 22),
+            title: Text('Clear Queue',
+                style: GoogleFonts.inter(
+                    fontSize: 14,
+                    color: Colors.white,
+                    fontWeight: FontWeight.w500)),
+            onTap: () {
+              _pc.clearQueue();
+              Navigator.pop(context);
+              _snack('Queue cleared');
+            },
+            dense: true,
+          ),
+        ]),
+      ),
+    );
+  }
 
   // ── QUEUE TAB ─────────────────────────────────────────────────────────────
 
@@ -436,61 +623,74 @@ class _PlayerScreenState extends State<PlayerScreen> {
                       fontWeight: FontWeight.w600,
                       color: Colors.grey.shade700)),
               const SizedBox(height: 6),
-              Text('Search  🔍  and add songs',
-                  style:
-                      GoogleFonts.inter(fontSize: 12, color: Colors.grey.shade700)),
+              Text('Search and add songs',
+                  style: GoogleFonts.inter(
+                      fontSize: 12, color: Colors.grey.shade700)),
+              const SizedBox(height: 20),
+              GestureDetector(
+                onTap: () {
+                  setState(() => _currentIndex = 1);
+                  _pages.animateToPage(1,
+                      duration: const Duration(milliseconds: 280),
+                      curve: Curves.easeOutCubic);
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 20, vertical: 10),
+                  decoration: BoxDecoration(
+                      color: const Color(0xFFFF3B30),
+                      borderRadius: BorderRadius.circular(8)),
+                  child: Text('GO TO SEARCH',
+                      style: GoogleFonts.inter(
+                          fontSize: 11,
+                          color: Colors.white,
+                          letterSpacing: 1.5,
+                          fontWeight: FontWeight.w700)),
+                ),
+              ),
             ]),
           );
         }
-        return Column(
-          children: [
-            Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              child: Row(
-                children: [
-                  Text(
-                    'UP NEXT',
-                    style: GoogleFonts.inter(
+        return Column(children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            child: Row(children: [
+              Text('UP NEXT',
+                  style: GoogleFonts.inter(
                       fontSize: 11,
                       fontWeight: FontWeight.w700,
                       color: Colors.grey.shade500,
-                      letterSpacing: 2.5,
-                    ),
-                  ),
-                  const Spacer(),
-                  GestureDetector(
-                    onTap: () => _pc.audioHandler.customAction('clearQueue'),
-                    child: Text(
-                      'CLEAR QUEUE',
-                      style: GoogleFonts.inter(
+                      letterSpacing: 2.5)),
+              const Spacer(),
+              GestureDetector(
+                onTap: () {
+                  _pc.clearQueue();
+                  _snack('Queue cleared');
+                },
+                child: Text('CLEAR',
+                    style: GoogleFonts.inter(
                         fontSize: 10,
                         fontWeight: FontWeight.w700,
                         color: const Color(0xFFFF3B30),
-                        letterSpacing: 1.5,
-                      ),
-                    ),
-                  ),
-                ],
+                        letterSpacing: 1.5)),
               ),
+            ]),
+          ),
+          const Divider(height: 1, color: Color(0xFF1C1C1C)),
+          Expanded(
+            child: ReorderableListView.builder(
+              padding: EdgeInsets.zero,
+              itemCount: queue.length,
+              onReorder: (o, n) => _pc.audioHandler
+                  .customAction('reorderQueue', {'oldIndex': o, 'newIndex': n}),
+              itemBuilder: (_, i) {
+                final item = queue[i];
+                final cur  = _pc.currentSong.value?.id == item.id;
+                return _queueRow(item, i, cur, key: ValueKey('${item.id}$i'));
+              },
             ),
-            const Divider(height: 1, color: Color(0xFF1C1C1C)),
-            Expanded(
-              child: ReorderableListView.builder(
-                padding: EdgeInsets.zero,
-                itemCount: queue.length,
-                onReorder: (o, n) => _pc.audioHandler.customAction(
-                    'reorderQueue', {'oldIndex': o, 'newIndex': n}),
-                itemBuilder: (_, i) {
-                  final item = queue[i];
-                  final cur = _pc.currentSong.value?.id == item.id;
-                  return _queueRow(item, i, cur,
-                      key: ValueKey('${item.id}$i'));
-                },
-              ),
-            ),
-          ],
-        );
+          ),
+        ]);
       },
     );
   }
@@ -498,7 +698,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   Widget _queueRow(MediaItem item, int index, bool cur, {required Key key}) {
     final art = item.artUri?.toString() ?? '';
     final dur = item.duration;
-    final ds = dur != null ? _fmt(dur) : '';
+    final ds  = dur != null ? _fmt(dur) : '';
     return GestureDetector(
       key: key,
       onTap: () => _pc.audioHandler.skipToQueueItem(index),
@@ -514,9 +714,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
             child: art.isNotEmpty
                 ? CachedNetworkImage(
                     imageUrl: art,
-                    width: 46,
-                    height: 46,
-                    fit: BoxFit.cover,
+                    width: 46, height: 46, fit: BoxFit.cover,
                     errorWidget: (_, __, ___) => _queueThumb())
                 : _queueThumb(),
           ),
@@ -528,11 +726,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   Row(children: [
                     if (cur)
                       Container(
-                        width: 7,
-                        height: 7,
+                        width: 7, height: 7,
                         margin: const EdgeInsets.only(right: 6),
                         decoration: const BoxDecoration(
-                            color: Color(0xFFFF3B30), shape: BoxShape.circle),
+                            color: Color(0xFFFF3B30),
+                            shape: BoxShape.circle),
                       ),
                     Expanded(
                       child: Text(item.title.toUpperCase(),
@@ -558,27 +756,27 @@ class _PlayerScreenState extends State<PlayerScreen> {
           if (ds.isNotEmpty) ...[
             const SizedBox(width: 8),
             Text(ds,
-                style:
-                    GoogleFonts.inter(fontSize: 11, color: Colors.grey.shade600)),
+                style: GoogleFonts.inter(
+                    fontSize: 11, color: Colors.grey.shade600)),
           ],
           const SizedBox(width: 4),
           GestureDetector(
             onTap: () => _pc.audioHandler.removeQueueItem(item),
             child: Padding(
               padding: const EdgeInsets.all(6),
-              child:
-                  Icon(Icons.close_rounded, color: Colors.grey.shade700, size: 17),
+              child: Icon(Icons.close_rounded,
+                  color: Colors.grey.shade700, size: 17),
             ),
           ),
-          Icon(Icons.drag_handle_rounded, color: Colors.grey.shade800, size: 18),
+          Icon(Icons.drag_handle_rounded,
+              color: Colors.grey.shade800, size: 18),
         ]),
       ),
     );
   }
 
   Widget _queueThumb() => Container(
-        width: 46,
-        height: 46,
+        width: 46, height: 46,
         decoration: BoxDecoration(
           color: const Color(0xFF1C1C1C),
           borderRadius: BorderRadius.circular(6),
@@ -590,88 +788,72 @@ class _PlayerScreenState extends State<PlayerScreen> {
   // ── SEARCH TAB ────────────────────────────────────────────────────────────
 
   Widget _searchTab() {
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
-          child: Row(
-            children: [
-              Text(
-                'Search',
-                style: GoogleFonts.inter(
+    return Column(children: [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
+        child: Row(children: [
+          Text('Search',
+              style: GoogleFonts.inter(
                   fontSize: 26,
                   fontWeight: FontWeight.w800,
                   color: Colors.white,
-                  letterSpacing: -0.2,
+                  letterSpacing: -0.2)),
+          const Spacer(),
+          Icon(Icons.mic_none_rounded, color: Colors.grey.shade400, size: 22),
+        ]),
+      ),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+        child: Container(
+          decoration: BoxDecoration(
+            color: const Color(0xFF161616),
+            borderRadius: BorderRadius.circular(24),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+          child: Row(children: [
+            const Icon(Icons.search_rounded, color: Colors.white, size: 20),
+            const SizedBox(width: 8),
+            Expanded(
+              child: TextField(
+                controller: _searchCtrl,
+                focusNode: _searchFocus,
+                onChanged: _sc.onQueryChanged,
+                style: GoogleFonts.inter(color: Colors.white, fontSize: 15),
+                decoration: InputDecoration(
+                  hintText: 'Artists, songs, or podcasts',
+                  hintStyle: GoogleFonts.inter(
+                      color: Colors.grey.shade600, fontSize: 14),
+                  border: InputBorder.none,
+                  isDense: true,
                 ),
               ),
-              const Spacer(),
-              Icon(Icons.mic_none_rounded,
-                  color: Colors.grey.shade400, size: 22),
-            ],
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-          child: Container(
-            decoration: BoxDecoration(
-              color: const Color(0xFF161616),
-              borderRadius: BorderRadius.circular(24),
             ),
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-            child: Row(
-              children: [
-                const Icon(Icons.search_rounded,
-                    color: Colors.white, size: 20),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: TextField(
-                    controller: _searchCtrl,
-                    focusNode: _searchFocus,
-                    onChanged: _sc.onQueryChanged,
-                    style:
-                        GoogleFonts.inter(color: Colors.white, fontSize: 15),
-                    decoration: InputDecoration(
-                      hintText: 'Artists, songs, or podcasts',
-                      hintStyle: GoogleFonts.inter(
-                          color: Colors.grey.shade600, fontSize: 14),
-                      border: InputBorder.none,
-                      isDense: true,
-                    ),
-                  ),
-                ),
-                Obx(() => _sc.isLoading.value
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2, color: Colors.white),
-                      )
-                    : _sc.query.value.isNotEmpty
-                        ? GestureDetector(
-                            onTap: () {
-                              _searchCtrl.clear();
-                              _sc.clear();
-                            },
-                            child: const Icon(Icons.close_rounded,
-                                color: Colors.grey, size: 18),
-                          )
-                        : const SizedBox(width: 18)),
-              ],
-            ),
-          ),
+            Obx(() => _sc.isLoading.value
+                ? const SizedBox(
+                    width: 18, height: 18,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: Colors.white))
+                : _sc.query.value.isNotEmpty
+                    ? GestureDetector(
+                        onTap: () {
+                          _searchCtrl.clear();
+                          _sc.clear();
+                        },
+                        child: const Icon(Icons.close_rounded,
+                            color: Colors.grey, size: 18))
+                    : const SizedBox(width: 18)),
+          ]),
         ),
-        Expanded(child: _searchBody()),
-      ],
-    );
+      ),
+      Expanded(child: _searchBody()),
+    ]);
   }
 
   Widget _searchBody() => Obx(() {
         final results = _sc.results;
         final loading = _sc.isLoading.value;
-        final q = _sc.query.value;
+        final q       = _sc.query.value;
 
-        // Empty query — show search history
         if (q.isEmpty) {
           final history = _pc.searchHistory;
           if (history.isEmpty) {
@@ -708,8 +890,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 child: ListView.separated(
                   padding: const EdgeInsets.only(top: 4),
                   itemCount: history.length,
-                  separatorBuilder: (_, __) =>
-                      Divider(color: Colors.grey.shade900, height: 1, indent: 76),
+                  separatorBuilder: (_, __) => Divider(
+                      color: Colors.grey.shade900, height: 1, indent: 76),
                   itemBuilder: (_, i) => _historyTile(history[i]),
                 ),
               ),
@@ -748,9 +930,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
               child: t.thumbnail.isNotEmpty
                   ? CachedNetworkImage(
                       imageUrl: t.thumbnail,
-                      width: 48,
-                      height: 48,
-                      fit: BoxFit.cover,
+                      width: 48, height: 48, fit: BoxFit.cover,
                       errorWidget: (_, __, ___) => _queueThumb())
                   : _queueThumb(),
             ),
@@ -777,7 +957,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
                         overflow: TextOverflow.ellipsis),
                   ]),
             ),
-            Icon(Icons.history_rounded, color: Colors.grey.shade700, size: 18),
+            Icon(Icons.history_rounded,
+                color: Colors.grey.shade700, size: 18),
           ]),
         ),
       );
@@ -793,9 +974,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
               child: r.thumbnail.isNotEmpty
                   ? CachedNetworkImage(
                       imageUrl: r.thumbnail,
-                      width: 48,
-                      height: 48,
-                      fit: BoxFit.cover,
+                      width: 48, height: 48, fit: BoxFit.cover,
                       errorWidget: (_, __, ___) => _queueThumb())
                   : _queueThumb(),
             ),
@@ -825,8 +1004,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
             if (r.duration.isNotEmpty) ...[
               const SizedBox(width: 8),
               Text(r.duration,
-                  style:
-                      GoogleFonts.inter(fontSize: 11, color: Colors.grey.shade500)),
+                  style: GoogleFonts.inter(
+                      fontSize: 11, color: Colors.grey.shade500)),
             ],
             const SizedBox(width: 8),
             GestureDetector(

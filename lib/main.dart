@@ -2,7 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:hive_flutter/hive_flutter.dart';
-
+import 'controllers/lyrics_controller.dart';   // ← ADD THIS
 import 'controllers/player_controller.dart';
 import 'services/audio_handler.dart';
 import 'ui/player_screen.dart';
@@ -21,6 +21,19 @@ void main() async {
 
   // ── Register PlayerController as GetX dependency ──────────────────────────
   Get.put(PlayerController(audioHandler: audioHandler));
+  final lyricsController = Get.put(LyricsController());
+
+// Listen to song changes and auto-fetch lyrics
+ever(Get.find<PlayerController>().currentSong, (song) {
+  if (song != null) {
+    lyricsController.fetchLyrics(
+      trackId:      song.id,
+      title:        song.title,
+      artist:       song.artist ?? '',
+      thumbnailUrl: song.artUri?.toString(),
+    );
+  }
+});
 
   runApp(const YTPlayerApp());
 }
