@@ -2,6 +2,7 @@
 import 'package:audio_service/audio_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -11,6 +12,7 @@ import '../controllers/search_controller.dart';
 import '../services/home_service.dart';
 import '../services/library_service.dart';
 import '../services/search_service.dart';
+import 'app_theme.dart';
 import 'library_screen.dart';
 import 'now_playing_screen.dart';
 import 'playlist_screen.dart';
@@ -28,20 +30,26 @@ class _PlayerScreenState extends State<PlayerScreen> {
   final HomeController _hc = Get.put(HomeController());
 
   int _currentIndex = 0;
-  late final PageController _pages;
+  int _previousIndex = 0;
   final _searchCtrl  = TextEditingController();
   final _searchFocus = FocusNode();
   final RxString _homeFilter = 'ALL'.obs;
 
+  void _switchTab(int index) {
+    if (index == _currentIndex) return;
+    setState(() {
+      _previousIndex = _currentIndex;
+      _currentIndex  = index;
+    });
+  }
+
   @override
   void initState() {
     super.initState();
-    _pages = PageController(initialPage: _currentIndex);
   }
 
   @override
   void dispose() {
-    _pages.dispose();
     _searchCtrl.dispose();
     _searchFocus.dispose();
     super.dispose();
@@ -83,15 +91,25 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   void _snack(String msg) => ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-            content: Text(msg, style: GoogleFonts.inter(fontSize: 12)),
-            duration: const Duration(seconds: 1),
-            backgroundColor: const Color(0xFF1C1C1C)),
+          content: Text(msg, style: AppText.subtitle()),
+          duration: const Duration(seconds: 1),
+          backgroundColor: AppColors.elevated,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
       );
 
   // ── Build ─────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
+    final tabs = [
+      _homeTab(),
+      _searchTab(),
+      const LibraryScreen(),
+      _queueTab(),
+    ];
+
     return Scaffold(
       backgroundColor: Colors.black,
       body: SafeArea(
@@ -100,16 +118,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
             Column(
               children: [
                 Expanded(
-                  child: PageView(
-                    controller: _pages,
-                    physics: const BouncingScrollPhysics(),
-                    onPageChanged: (i) => setState(() => _currentIndex = i),
-                    children: [
-                      _homeTab(),
-                      _searchTab(),
-                      const LibraryScreen(),
-                      _queueTab(),
-                    ],
+                  child: _TabSwitcher(
+                    currentIndex: _currentIndex,
+                    previousIndex: _previousIndex,
+                    tabs: tabs,
                   ),
                 ),
                 const SizedBox(height: 72),
@@ -155,23 +167,27 @@ class _PlayerScreenState extends State<PlayerScreen> {
     final selected = _currentIndex == index;
     final color = selected ? const Color(0xFFFF3B30) : Colors.grey.shade500;
     return GestureDetector(
-      onTap: () {
-        setState(() => _currentIndex = index);
-        _pages.animateToPage(index,
-            duration: const Duration(milliseconds: 280),
-            curve: Curves.easeOutCubic);
-      },
+      onTap: () => _switchTab(index),
       behavior: HitTestBehavior.opaque,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Icon(icon, color: color, size: 22),
+          AnimatedScale(
+            scale: selected ? 1.22 : 1.0,
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeOutBack,
+            child: Icon(icon, color: color, size: 22),
+          ),
           const SizedBox(height: 2),
-          Text(label,
-              style: GoogleFonts.inter(
-                  fontSize: 10,
-                  fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                  color: color)),
+          AnimatedDefaultTextStyle(
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeOut,
+            style: GoogleFonts.inter(
+                fontSize: 10,
+                fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                color: color),
+            child: Text(label),
+          ),
         ]),
       ),
     );
@@ -238,6 +254,13 @@ class _PlayerScreenState extends State<PlayerScreen> {
                       ],
                     ),
                   ),
+                  Obx(() => _hc.isRefreshing.value
+                      ? const SizedBox(
+                          width: 16, height: 16,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 1.5, color: Color(0xFFFF3B30)))
+                      : const SizedBox.shrink()),
+                  const SizedBox(width: 8),
                   GestureDetector(
                     onTap: _showSettingsSheet,
                     child: Container(
@@ -482,9 +505,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   Widget _gridThumbPlaceholder() => Container(
-        color: const Color(0xFF1C1C1C),
+        color: AppColors.elevated,
         child: Icon(Icons.library_music_rounded,
-            size: 40, color: Colors.grey.shade800),
+            size: 40, color: AppColors.textMuted),
       );
 
   Widget _errorState() => Center(
@@ -628,12 +651,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                       fontSize: 12, color: Colors.grey.shade700)),
               const SizedBox(height: 20),
               GestureDetector(
-                onTap: () {
-                  setState(() => _currentIndex = 1);
-                  _pages.animateToPage(1,
-                      duration: const Duration(milliseconds: 280),
-                      curve: Curves.easeOutCubic);
-                },
+                onTap: () => _switchTab(1),
                 child: Container(
                   padding: const EdgeInsets.symmetric(
                       horizontal: 20, vertical: 10),
@@ -775,15 +793,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     );
   }
 
-  Widget _queueThumb() => Container(
-        width: 46, height: 46,
-        decoration: BoxDecoration(
-          color: const Color(0xFF1C1C1C),
-          borderRadius: BorderRadius.circular(6),
-        ),
-        child: Icon(Icons.music_note_rounded,
-            size: 20, color: Colors.grey.shade700),
-      );
+  Widget _queueThumb() => const ThumbPlaceholder(size: 46, radius: 6);
 
   // ── SEARCH TAB ────────────────────────────────────────────────────────────
 
@@ -1026,5 +1036,87 @@ class _PlayerScreenState extends State<PlayerScreen> {
     final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
     final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
     return '$m:$s';
+  }
+}
+
+// ── Tab switcher: fade + slide up ─────────────────────────────────────────
+
+class _TabSwitcher extends StatefulWidget {
+  final int currentIndex;
+  final int previousIndex;
+  final List<Widget> tabs;
+
+  const _TabSwitcher({
+    required this.currentIndex,
+    required this.previousIndex,
+    required this.tabs,
+  });
+
+  @override
+  State<_TabSwitcher> createState() => _TabSwitcherState();
+}
+
+class _TabSwitcherState extends State<_TabSwitcher>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+  late Animation<double> _fadeAnim;
+  late Animation<Offset> _slideAnim;
+
+  int _visibleIndex = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _visibleIndex = widget.currentIndex;
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 260),
+    );
+    _buildAnimations();
+    // Start fully visible — no animation on initial load
+    _ctrl.value = 1.0;
+  }
+
+  void _buildAnimations() {
+    _fadeAnim = CurvedAnimation(parent: _ctrl, curve: Curves.easeOut);
+    _slideAnim = Tween<Offset>(
+      begin: const Offset(0, 0.045),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeOutCubic));
+  }
+
+  @override
+  void didUpdateWidget(_TabSwitcher old) {
+    super.didUpdateWidget(old);
+    if (old.currentIndex != widget.currentIndex) {
+      _visibleIndex = widget.currentIndex;
+      _ctrl.forward(from: 0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      fit: StackFit.expand,
+      children: List.generate(widget.tabs.length, (i) {
+        final isActive = i == _visibleIndex;
+        if (!isActive) {
+          return Offstage(offstage: true, child: widget.tabs[i]);
+        }
+        return FadeTransition(
+          opacity: _fadeAnim,
+          child: SlideTransition(
+            position: _slideAnim,
+            child: widget.tabs[i],
+          ),
+        );
+      }),
+    );
   }
 }

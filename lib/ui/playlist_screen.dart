@@ -1,16 +1,12 @@
 // ui/playlist_screen.dart
-// Full-screen playlist detail page.
-// Header: large blurred thumbnail + title + author + track count + total duration.
-// Body: numbered track list — tap to play, long press to add to queue.
-
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:audio_service/audio_service.dart';
 
 import '../controllers/player_controller.dart';
 import '../services/playlist_service.dart';
+import 'app_theme.dart';
 import 'widgets/mini_player_bar.dart';
 
 class PlaylistScreen extends StatefulWidget {
@@ -34,7 +30,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
 
   PlaylistDetail? _detail;
   bool _loading = true;
-  bool _error = false;
+  bool _error   = false;
 
   @override
   void initState() {
@@ -43,508 +39,255 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
   }
 
   Future<void> _load() async {
-    setState(() {
-      _loading = true;
-      _error = false;
-    });
+    setState(() { _loading = true; _error = false; });
     final data = await PlaylistService.getPlaylist(widget.playlistId);
-    if (mounted) {
-      setState(() {
-        _detail = data;
-        _loading = false;
-        _error = data == null;
-      });
-    }
+    if (mounted) setState(() {
+      _detail  = data;
+      _loading = false;
+      _error   = data == null;
+    });
   }
 
-  // ── play helpers ──────────────────────────────────────────────────────────
+  // ── Playback helpers ───────────────────────────────────────────────────────
 
-  /// Plays first track immediately, queues all remaining playlist tracks,
-  /// then fetches recommendations and appends them at the very end.
-  /// This preserves playlist order: Song1 → Song2...SongN → recommendations.
-  void _playAll() {
-    _playAllFromIndex(0);
-  }
-
-  /// Silently appends every track in the playlist to the current queue.
-  void _addAllToQueue() {
-    if (_detail == null || _detail!.tracks.isEmpty) return;
-    for (final t in _detail!.tracks) {
-      _pc.addToQueue(t.videoId,
-          title: t.title,
-          artist: t.artistLine,
-          thumbnail: t.thumbnailUrl,
-          duration: t.durationValue);
-    }
-    _snack('Added ${_detail!.tracks.length} songs to queue');
-  }
-
-  void _playSong(PlaylistTrack t) {
-    if (_detail == null || _detail!.tracks.isEmpty) return;
-    final tracks = _detail!.tracks;
-    final index = tracks.indexOf(t);
-    if (index == -1) return;
-    _playAllFromIndex(index);
-    _snack('Playing from: ${t.title}');
-  }
-
-  void _queueSong(PlaylistTrack t) {
-    _pc.addToQueue(t.videoId,
-        title: t.title,
-        artist: t.artistLine,
-        thumbnail: t.thumbnailUrl,
-        duration: t.durationValue);
-    _snack('Added: ${t.title}');
-  }
-
-  void _snack(String msg) => ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content: Text(msg, style: GoogleFonts.inter(fontSize: 12)),
-            duration: const Duration(seconds: 1),
-            backgroundColor: const Color(0xFF1C1C1C)),
-      );
-
-  /// Replace queue with full playlist (slice) and start from [startIndex].
   Future<void> _playAllFromIndex(int startIndex) async {
     if (_detail == null || _detail!.tracks.isEmpty) return;
-    final tracks = _detail!.tracks;
-    if (startIndex < 0 || startIndex >= tracks.length) return;
-
-    // "Play all starting from this song" → slice from startIndex onward.
-    final slice = tracks.sublist(startIndex);
-
-    // Play first of the slice, then queue the rest — this reuses existing
-    // audio handler behavior without custom actions. We await the initial
-    // play so that its internal queue reset doesn't overwrite our queued items.
+    final slice = _detail!.tracks.sublist(
+        startIndex.clamp(0, _detail!.tracks.length - 1));
     final first = slice.first;
-    await _pc.playVideoId(
-      first.videoId,
-      title: first.title,
-      artist: first.artistLine,
-      thumbnail: first.thumbnailUrl,
-      duration: first.durationValue,
-    );
+    await _pc.playVideoId(first.videoId,
+        title: first.title, artist: first.artistLine,
+        thumbnail: first.thumbnailUrl, duration: first.durationValue);
     for (final t in slice.skip(1)) {
-      _pc.addToQueue(
-        t.videoId,
-        title: t.title,
-        artist: t.artistLine,
-        thumbnail: t.thumbnailUrl,
-        duration: t.durationValue,
-      );
+      _pc.addToQueue(t.videoId,
+          title: t.title, artist: t.artistLine,
+          thumbnail: t.thumbnailUrl, duration: t.durationValue);
     }
     _snack('Playing ${slice.length} songs');
   }
 
-  /// Shuffle this playlist once, replace queue, and start playing.
   Future<void> _shuffleAll() async {
     if (_detail == null || _detail!.tracks.isEmpty) return;
     final shuffled = [..._detail!.tracks]..shuffle();
-
     final first = shuffled.first;
-    await _pc.playVideoId(
-      first.videoId,
-      title: first.title,
-      artist: first.artistLine,
-      thumbnail: first.thumbnailUrl,
-      duration: first.durationValue,
-    );
+    await _pc.playVideoId(first.videoId,
+        title: first.title, artist: first.artistLine,
+        thumbnail: first.thumbnailUrl, duration: first.durationValue);
     for (final t in shuffled.skip(1)) {
-      _pc.addToQueue(
-        t.videoId,
-        title: t.title,
-        artist: t.artistLine,
-        thumbnail: t.thumbnailUrl,
-        duration: t.durationValue,
-      );
+      _pc.addToQueue(t.videoId,
+          title: t.title, artist: t.artistLine,
+          thumbnail: t.thumbnailUrl, duration: t.durationValue);
     }
     _snack('Shuffled ${shuffled.length} songs');
   }
 
-  // ── build ─────────────────────────────────────────────────────────────────
+  void _addAllToQueue() {
+    if (_detail == null) return;
+    for (final t in _detail!.tracks) {
+      _pc.addToQueue(t.videoId,
+          title: t.title, artist: t.artistLine,
+          thumbnail: t.thumbnailUrl, duration: t.durationValue);
+    }
+    _snack('Added ${_detail!.tracks.length} songs to queue');
+  }
+
+  void _snack(String msg) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(msg, style: AppText.subtitle()),
+        duration: const Duration(seconds: 1),
+        backgroundColor: AppColors.elevated,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ));
+
+  // ── Build ──────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.black,
-      body: Stack(
-        children: [
-          _loading
-              ? _loadingView()
-              : _error || _detail == null
-                  ? _errorView()
-                  : _contentView(),
-          const MiniPlayerBar(),
-        ],
-      ),
+      backgroundColor: AppColors.bg,
+      body: Stack(children: [
+        _loading  ? _loadingView()  :
+        _error    ? _errorView()    :
+                    _contentView(),
+        const MiniPlayerBar(),
+      ]),
     );
   }
 
-  Widget _loadingView() => SafeArea(
-        child: Column(children: [
-          _backBar(widget.playlistTitle),
-          const Expanded(
-            child: Center(
-                child: CircularProgressIndicator(
-                    color: Color(0xFFFF3B30), strokeWidth: 2)),
-          ),
-        ]),
-      );
+  Widget _loadingView() => SafeArea(child: Column(children: [
+    _appBar(widget.playlistTitle),
+    const Expanded(child: Center(
+        child: CircularProgressIndicator(color: AppColors.accent, strokeWidth: 2))),
+  ]));
 
-  Widget _errorView() => SafeArea(
-        child: Column(children: [
-          _backBar(widget.playlistTitle),
-          Expanded(
-            child: Center(
-              child: Column(mainAxisSize: MainAxisSize.min, children: [
-                Icon(Icons.cloud_off_rounded,
-                    size: 52, color: Colors.grey.shade800),
-                const SizedBox(height: 12),
-                Text('Could not load playlist',
-                    style: GoogleFonts.inter(
-                        fontSize: 14, color: Colors.grey.shade600)),
-                const SizedBox(height: 16),
-                GestureDetector(
-                  onTap: _load,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 20, vertical: 10),
-                    decoration: BoxDecoration(
-                        border: Border.all(color: Colors.grey.shade800),
-                        borderRadius: BorderRadius.circular(8)),
-                    child: Text('RETRY',
-                        style: GoogleFonts.inter(
-                            fontSize: 11,
-                            color: Colors.white,
-                            letterSpacing: 2,
-                            fontWeight: FontWeight.w700)),
-                  ),
-                ),
-              ]),
-            ),
-          ),
-        ]),
-      );
+  Widget _errorView() => SafeArea(child: Column(children: [
+    _appBar(widget.playlistTitle),
+    Expanded(child: Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+      Icon(Icons.cloud_off_rounded, size: 48, color: AppColors.textMuted),
+      const SizedBox(height: 12),
+      Text('Could not load playlist', style: AppText.subtitle()),
+      const SizedBox(height: 20),
+      SecondaryButton(label: 'RETRY', icon: Icons.refresh_rounded, onTap: _load),
+    ]))),
+  ]));
+
+  Widget _appBar(String title) => Padding(
+    padding: const EdgeInsets.fromLTRB(4, 8, 16, 8),
+    child: Row(children: [
+      const AppBackButton(),
+      const SizedBox(width: 4),
+      Expanded(child: Text(title,
+          style: AppText.title(size: 16),
+          maxLines: 1, overflow: TextOverflow.ellipsis)),
+    ]),
+  );
 
   Widget _contentView() {
     final d = _detail!;
-    return CustomScrollView(
-      slivers: [
-        // ── Collapsing header ─────────────────────────────────────────────
-        SliverAppBar(
-          backgroundColor: Colors.black,
-          expandedHeight: 300,
-          pinned: true,
-          leading: IconButton(
-            onPressed: () => Navigator.pop(context),
-            icon: const Icon(Icons.arrow_back_rounded,
-                color: Colors.white, size: 22),
-          ),
-          flexibleSpace: FlexibleSpaceBar(
-            collapseMode: CollapseMode.pin,
-            background: Stack(
-              fit: StackFit.expand,
-              children: [
-                // Blurred background
-                if (d.thumbnailUrl.isNotEmpty)
-                  CachedNetworkImage(imageUrl: d.thumbnailUrl,
-                      fit: BoxFit.cover,
-                      errorWidget: (_, __, ___) =>
-                          Container(color: const Color(0xFF111111))),
-                // Gradient overlay
-                Container(
-                  decoration: const BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        Colors.transparent,
-                        Color(0xCC000000),
-                        Colors.black,
-                      ],
-                      stops: [0.3, 0.75, 1.0],
-                    ),
-                  ),
-                ),
-                // Info at bottom of header
-                Positioned(
-                  left: 16,
-                  right: 16,
-                  bottom: 16,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        d.title.toUpperCase(),
-                        style: GoogleFonts.inter(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w900,
-                          color: Colors.white,
-                          letterSpacing: 0.5,
-                        ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 4),
-                      Row(children: [
-                        if (d.authorName.isNotEmpty) ...[
-                          Text(d.authorName.toUpperCase(),
-                              style: GoogleFonts.inter(
-                                  fontSize: 11,
-                                  color: Colors.grey.shade400,
-                                  fontWeight: FontWeight.w600,
-                                  letterSpacing: 1)),
-                          Text('  ·  ',
-                              style: GoogleFonts.inter(
-                                  fontSize: 11,
-                                  color: Colors.grey.shade600)),
-                        ],
-                        Text(
-                          '${d.trackCount} songs  ·  ${d.totalDuration}',
-                          style: GoogleFonts.inter(
-                              fontSize: 11,
-                              color: Colors.grey.shade500),
-                        ),
-                      ]),
+    return CustomScrollView(slivers: [
+
+      // ── Collapsing header ──────────────────────────────────────────────────
+      SliverAppBar(
+        backgroundColor: AppColors.bg,
+        expandedHeight: 280,
+        pinned: true,
+        leading: const AppBackButton(),
+        flexibleSpace: FlexibleSpaceBar(
+          collapseMode: CollapseMode.pin,
+          background: Stack(fit: StackFit.expand, children: [
+            if (d.thumbnailUrl.isNotEmpty)
+              CachedNetworkImage(imageUrl: d.thumbnailUrl, fit: BoxFit.cover,
+                  errorWidget: (_, __, ___) => Container(color: AppColors.surface)),
+            Container(decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter, end: Alignment.bottomCenter,
+                colors: [Colors.transparent, Color(0xDD000000), Colors.black],
+                stops: [0.3, 0.72, 1.0],
+              ),
+            )),
+            Positioned(left: 16, right: 16, bottom: 16,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(d.title,
+                      style: GoogleFonts.inter(
+                          fontSize: 22, fontWeight: FontWeight.w800,
+                          color: Colors.white, letterSpacing: -0.3),
+                      maxLines: 2, overflow: TextOverflow.ellipsis),
+                  const SizedBox(height: 6),
+                  Row(children: [
+                    if (d.authorName.isNotEmpty) ...[
+                      Text(d.authorName, style: AppText.subtitle()),
+                      Text('  ·  ', style: AppText.caption()),
                     ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-
-        // ── Action buttons ────────────────────────────────────────────────
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-            child: Row(children: [
-              // PLAY ALL
-              Expanded(
-                child: GestureDetector(
-                  onTap: _playAll,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFFF3B30),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Icon(Icons.play_arrow_rounded,
-                              color: Colors.white, size: 20),
-                          const SizedBox(width: 6),
-                          Text('PLAY ALL',
-                              style: GoogleFonts.inter(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w700,
-                                  color: Colors.white,
-                                  letterSpacing: 1.5)),
-                        ]),
-                  ),
-                ),
+                    Text('${d.trackCount} songs · ${d.totalDuration}',
+                        style: AppText.subtitle()),
+                  ]),
+                ],
               ),
-            const SizedBox(width: 10),
-            // SHUFFLE ALL
-            Expanded(
-              child: GestureDetector(
-                onTap: _shuffleAll,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF1C1C1C),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.shuffle_rounded,
-                            color: Colors.grey.shade300, size: 18),
-                        const SizedBox(width: 6),
-                        Text('SHUFFLE ALL',
-                            style: GoogleFonts.inter(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w700,
-                                color: Colors.grey.shade300,
-                                letterSpacing: 1.2)),
-                      ]),
-                ),
-              ),
-            ),
-            const SizedBox(width: 10),
-            // ADD ALL TO QUEUE
-            Expanded(
-              child: GestureDetector(
-                onTap: _addAllToQueue,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  decoration: BoxDecoration(
-                    color: Colors.transparent,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.grey.shade800),
-                  ),
-                  child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.add_rounded,
-                            color: Colors.grey.shade300, size: 20),
-                        const SizedBox(width: 6),
-                        Text('ADD TO QUEUE',
-                            style: GoogleFonts.inter(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w700,
-                                color: Colors.grey.shade300,
-                                letterSpacing: 1.2)),
-                      ]),
-                ),
-              ),
-            ),
-            ]),
-          ),
-        ),
-
-        // ── Description ───────────────────────────────────────────────────
-        if (d.description.isNotEmpty)
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-              child: Text(
-                d.description,
-                style: GoogleFonts.inter(
-                    fontSize: 12, color: Colors.grey.shade600),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          ),
-
-        // ── Track count label ─────────────────────────────────────────────
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-            child: Text(
-              'TRACKS',
-              style: GoogleFonts.inter(
-                  fontSize: 10,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.grey.shade600,
-                  letterSpacing: 2.5),
-            ),
-          ),
-        ),
-
-        // ── Track list ────────────────────────────────────────────────────
-        SliverList(
-          delegate: SliverChildBuilderDelegate(
-            (_, i) {
-              if (i >= d.tracks.length) return null;
-              final t = d.tracks[i];
-              return _trackTile(t, i + 1);
-            },
-            childCount: d.tracks.length,
-          ),
-        ),
-
-        const SliverToBoxAdapter(child: SizedBox(height: 140)),
-      ],
-    );
-  }
-
-  Widget _backBar(String title) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-          child: Row(children: [
-            IconButton(
-              onPressed: () => Navigator.pop(context),
-              icon: const Icon(Icons.arrow_back_rounded,
-                  color: Colors.white, size: 22),
-            ),
-            Expanded(
-              child: Text(title,
-                  style: GoogleFonts.inter(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis),
             ),
           ]),
         ),
-      );
+      ),
+
+      // ── Action buttons ─────────────────────────────────────────────────────
+      SliverToBoxAdapter(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+          child: Row(children: [
+            Expanded(child: PrimaryButton(
+              label: 'PLAY ALL', icon: Icons.play_arrow_rounded,
+              onTap: () => _playAllFromIndex(0),
+            )),
+            const SizedBox(width: 10),
+            Expanded(child: SecondaryButton(
+              label: 'SHUFFLE', icon: Icons.shuffle_rounded,
+              onTap: _shuffleAll,
+            )),
+            const SizedBox(width: 10),
+            Expanded(child: SecondaryButton(
+              label: 'QUEUE', icon: Icons.add_rounded,
+              onTap: _addAllToQueue,
+              outlined: true,
+            )),
+          ]),
+        ),
+      ),
+
+      // ── Description ────────────────────────────────────────────────────────
+      if (d.description.isNotEmpty)
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+            child: Text(d.description,
+                style: AppText.subtitle(),
+                maxLines: 2, overflow: TextOverflow.ellipsis),
+          ),
+        ),
+
+      // ── Tracks label ───────────────────────────────────────────────────────
+      SliverToBoxAdapter(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
+          child: Text('TRACKS', style: AppText.label()),
+        ),
+      ),
+
+      // ── Track list ─────────────────────────────────────────────────────────
+      SliverList(
+        delegate: SliverChildBuilderDelegate(
+          (_, i) => _trackTile(d.tracks[i], i + 1),
+          childCount: d.tracks.length,
+        ),
+      ),
+
+      const SliverToBoxAdapter(child: SizedBox(height: 140)),
+    ]);
+  }
+
+  // ── Track tile ─────────────────────────────────────────────────────────────
 
   Widget _trackTile(PlaylistTrack t, int index) {
     return GestureDetector(
-      onTap: () => _playSong(t),
-      onLongPress: () => _showTrackOptions(t),
+      onTap: () => _playAllFromIndex(index - 1),
+      onLongPress: () => _trackOptions(t),
       behavior: HitTestBehavior.opaque,
-      child: Container(
-        decoration: BoxDecoration(
-            border: Border(
-                bottom: BorderSide(color: Colors.grey.shade900, width: 0.5))),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         child: Row(children: [
-          // Index number
           SizedBox(
-            width: 28,
-            child: Text('$index',
-                style: GoogleFonts.inter(
-                    fontSize: 12,
-                    color: Colors.grey.shade700,
-                    fontWeight: FontWeight.w600),
-                textAlign: TextAlign.center),
-          ),
-          const SizedBox(width: 10),
-          // Thumbnail
-          ClipRRect(
-            borderRadius: BorderRadius.circular(5),
-            child: t.thumbnailUrl.isNotEmpty
-                ? CachedNetworkImage(imageUrl: t.thumbnailUrl,
-                    width: 46,
-                    height: 46,
-                    fit: BoxFit.cover,
-                    errorWidget: (_, __, ___) => _thumb())
-                : _thumb(),
+            width: 24,
+            child: Text('$index', style: AppText.caption(), textAlign: TextAlign.center),
           ),
           const SizedBox(width: 12),
-          // Title + artist
-          Expanded(
-            child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(t.title,
-                      style: GoogleFonts.inter(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.white),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis),
-                  const SizedBox(height: 2),
-                  Text(t.artistLine.toUpperCase(),
-                      style: GoogleFonts.inter(
-                          fontSize: 10,
-                          color: Colors.grey.shade500,
-                          fontWeight: FontWeight.w500),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis),
-                ]),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: t.thumbnailUrl.isNotEmpty
+                ? CachedNetworkImage(
+                    imageUrl: t.thumbnailUrl, width: 46, height: 46, fit: BoxFit.cover,
+                    errorWidget: (_, __, ___) => const ThumbPlaceholder(size: 46, radius: 8))
+                : const ThumbPlaceholder(size: 46, radius: 8),
           ),
-          // Duration
+          const SizedBox(width: 12),
+          Expanded(child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(t.title, style: AppText.title(size: 13),
+                    maxLines: 1, overflow: TextOverflow.ellipsis),
+                const SizedBox(height: 3),
+                Text(t.artistLine, style: AppText.subtitle(),
+                    maxLines: 1, overflow: TextOverflow.ellipsis),
+              ])),
           if (t.duration.isNotEmpty) ...[
             const SizedBox(width: 8),
-            Text(t.duration,
-                style: GoogleFonts.inter(
-                    fontSize: 11, color: Colors.grey.shade600)),
+            Text(t.duration, style: AppText.caption()),
           ],
-          const SizedBox(width: 8),
-          // More options
           GestureDetector(
-            onTap: () => _showTrackOptions(t),
+            onTap: () => _trackOptions(t),
             child: Padding(
-              padding: const EdgeInsets.all(4),
-              child: Icon(Icons.more_vert_rounded,
-                  color: Colors.grey.shade700, size: 18),
+              padding: const EdgeInsets.all(6),
+              child: Icon(Icons.more_vert_rounded, color: AppColors.textMuted, size: 18),
             ),
           ),
         ]),
@@ -552,96 +295,63 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
     );
   }
 
-  Widget _thumb() => Container(
-        width: 46,
-        height: 46,
-        decoration: BoxDecoration(
-          color: const Color(0xFF1C1C1C),
-          borderRadius: BorderRadius.circular(5),
-        ),
-        child: Icon(Icons.music_note_rounded,
-            size: 20, color: Colors.grey.shade800),
-      );
-
-  void _showTrackOptions(PlaylistTrack t) {
+  void _trackOptions(PlaylistTrack t) {
+    AppHaptics.medium();
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF111111),
+      backgroundColor: AppColors.surface,
       shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (_) => Padding(
-        padding: const EdgeInsets.fromLTRB(0, 12, 0, 28),
+        padding: const EdgeInsets.fromLTRB(0, 12, 0, 32),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          // handle
-          Container(
-            width: 36,
-            height: 4,
-            decoration: BoxDecoration(
-                color: Colors.grey.shade700,
-                borderRadius: BorderRadius.circular(2)),
-          ),
+          const SheetHandle(),
           const SizedBox(height: 16),
-          // Song info
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
             child: Row(children: [
               ClipRRect(
-                borderRadius: BorderRadius.circular(6),
+                borderRadius: BorderRadius.circular(8),
                 child: t.thumbnailUrl.isNotEmpty
                     ? CachedNetworkImage(imageUrl: t.thumbnailUrl,
                         width: 48, height: 48, fit: BoxFit.cover,
-                        errorWidget: (_, __, ___) => _thumb())
-                    : _thumb(),
+                        errorWidget: (_, __, ___) => const ThumbPlaceholder(size: 48))
+                    : const ThumbPlaceholder(size: 48),
               ),
               const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(t.title,
-                          style: GoogleFonts.inter(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.white),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis),
-                      Text(t.artistLine,
-                          style: GoogleFonts.inter(
-                              fontSize: 11, color: Colors.grey.shade500),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis),
-                    ]),
-              ),
+              Expanded(child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(t.title, style: AppText.title(size: 13),
+                        maxLines: 1, overflow: TextOverflow.ellipsis),
+                    const SizedBox(height: 2),
+                    Text(t.artistLine, style: AppText.subtitle(),
+                        maxLines: 1, overflow: TextOverflow.ellipsis),
+                  ])),
             ]),
           ),
-          Divider(color: Colors.grey.shade900, height: 20),
+          Divider(color: AppColors.border, height: 24),
           ListTile(
-            leading: const Icon(Icons.play_arrow_rounded,
-                color: Colors.white, size: 22),
-            title: Text('Play now',
-                style: GoogleFonts.inter(
-                    fontSize: 14,
-                    color: Colors.white,
-                    fontWeight: FontWeight.w500)),
+            leading: Icon(Icons.play_arrow_rounded, color: AppColors.textSecondary, size: 22),
+            title: Text('Play from here', style: AppText.title(size: 14)),
             onTap: () {
+              AppHaptics.light();
               Navigator.pop(context);
-              _playSong(t);
+              _playAllFromIndex(_detail!.tracks.indexOf(t));
             },
-            dense: true,
+            dense: true, contentPadding: const EdgeInsets.symmetric(horizontal: 20),
           ),
           ListTile(
-            leading: Icon(Icons.add_rounded,
-                color: Colors.grey.shade400, size: 22),
-            title: Text('Add to queue',
-                style: GoogleFonts.inter(
-                    fontSize: 14,
-                    color: Colors.white,
-                    fontWeight: FontWeight.w500)),
+            leading: Icon(Icons.add_to_queue_rounded, color: AppColors.textSecondary, size: 22),
+            title: Text('Add to queue', style: AppText.title(size: 14)),
             onTap: () {
+              AppHaptics.light();
+              _pc.addToQueue(t.videoId, title: t.title, artist: t.artistLine,
+                  thumbnail: t.thumbnailUrl, duration: t.durationValue);
               Navigator.pop(context);
-              _queueSong(t);
+              _snack('Added to queue');
             },
-            dense: true,
+            dense: true, contentPadding: const EdgeInsets.symmetric(horizontal: 20),
           ),
         ]),
       ),

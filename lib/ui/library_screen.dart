@@ -1,12 +1,11 @@
 // ui/library_screen.dart
-// Library tab: Liked Songs card + custom playlists grid.
-// Fully reactive — uses StatefulWidget and reloads on return from sub-screens.
-
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../services/library_service.dart';
+import 'app_theme.dart';
 import 'local_playlist_screen.dart';
 
 class LibraryScreen extends StatefulWidget {
@@ -17,8 +16,8 @@ class LibraryScreen extends StatefulWidget {
 }
 
 class _LibraryScreenState extends State<LibraryScreen> {
-  List<LibraryTrack> _liked = [];
-  List<LocalPlaylist> _playlists = [];
+  List<LibraryTrack>   _liked     = [];
+  List<LocalPlaylist>  _playlists = [];
 
   @override
   void initState() {
@@ -26,67 +25,43 @@ class _LibraryScreenState extends State<LibraryScreen> {
     _load();
   }
 
-  void _load() {
-    setState(() {
-      _liked = LibraryService.getLiked();
-      _playlists = LibraryService.getPlaylists();
-    });
-  }
+  void _load() => setState(() {
+        _liked     = LibraryService.getLiked();
+        _playlists = LibraryService.getPlaylists();
+      });
 
   void _openLiked() async {
-    await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => const LocalPlaylistScreen(
-          title: 'Liked Songs',
-          isLiked: true,
-        ),
-      ),
-    );
-    _load(); // refresh on return
+    await Navigator.push(context, MaterialPageRoute(
+      builder: (_) => const LocalPlaylistScreen(title: 'Liked Songs', isLiked: true),
+    ));
+    _load();
   }
 
   void _openPlaylist(LocalPlaylist pl) async {
-    await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => LocalPlaylistScreen(
-          title: pl.name,
-          playlistId: pl.id,
-        ),
-      ),
-    );
+    await Navigator.push(context, MaterialPageRoute(
+      builder: (_) => LocalPlaylistScreen(title: pl.name, playlistId: pl.id),
+    ));
     _load();
   }
+
+  // ── Create playlist sheet ──────────────────────────────────────────────────
 
   void _createPlaylist() {
     String name = '';
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF111111),
+      backgroundColor: AppColors.surface,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (_) => Padding(
         padding: EdgeInsets.only(
             bottom: MediaQuery.of(context).viewInsets.bottom + 32,
-            top: 16,
-            left: 20,
-            right: 20),
+            top: 16, left: 20, right: 20),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Container(
-            width: 36,
-            height: 4,
-            decoration: BoxDecoration(
-                color: Colors.grey.shade700,
-                borderRadius: BorderRadius.circular(2)),
-          ),
+          const SheetHandle(),
           const SizedBox(height: 20),
-          Text('New Playlist',
-              style: GoogleFonts.inter(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.white)),
+          Text('New Playlist', style: AppText.title(size: 16)),
           const SizedBox(height: 16),
           TextField(
             autofocus: true,
@@ -94,42 +69,27 @@ class _LibraryScreenState extends State<LibraryScreen> {
             style: GoogleFonts.inter(color: Colors.white, fontSize: 15),
             decoration: InputDecoration(
               hintText: 'Playlist name',
-              hintStyle: GoogleFonts.inter(
-                  color: Colors.grey.shade600, fontSize: 15),
-              filled: true,
-              fillColor: const Color(0xFF1C1C1C),
+              hintStyle: AppText.subtitle(size: 15),
+              filled: true, fillColor: AppColors.elevated,
               border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-                borderSide: BorderSide.none,
-              ),
-              contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 16, vertical: 12),
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none),
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           SizedBox(
             width: double.infinity,
-            child: GestureDetector(
+            child: PrimaryButton(
+              label: 'CREATE',
+              icon: Icons.add_rounded,
               onTap: () {
                 if (name.trim().isEmpty) return;
                 LibraryService.createPlaylist(name.trim());
                 Navigator.pop(context);
                 _load();
               },
-              child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 13),
-                decoration: BoxDecoration(
-                    color: const Color(0xFFFF3B30),
-                    borderRadius: BorderRadius.circular(8)),
-                child: Center(
-                  child: Text('CREATE',
-                      style: GoogleFonts.inter(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white,
-                          letterSpacing: 1.5)),
-                ),
-              ),
             ),
           ),
         ]),
@@ -137,271 +97,283 @@ class _LibraryScreenState extends State<LibraryScreen> {
     );
   }
 
-  void _deletePlaylist(LocalPlaylist pl) {
+  // ── Delete playlist sheet ──────────────────────────────────────────────────
+
+  void _showPlaylistOptions(LocalPlaylist pl) {
+    HapticFeedback.mediumImpact();
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF111111),
+      backgroundColor: AppColors.surface,
       shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (_) => Padding(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 36),
+        padding: const EdgeInsets.fromLTRB(0, 12, 0, 32),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Container(
-            width: 36,
-            height: 4,
-            decoration: BoxDecoration(
-                color: Colors.grey.shade700,
-                borderRadius: BorderRadius.circular(2)),
+          const SheetHandle(),
+          const SizedBox(height: 16),
+          // Playlist preview
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Row(children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: pl.thumbnailUrl.isNotEmpty
+                    ? CachedNetworkImage(imageUrl: pl.thumbnailUrl,
+                        width: 48, height: 48, fit: BoxFit.cover,
+                        errorWidget: (_, __, ___) => const ThumbPlaceholder(size: 48))
+                    : const ThumbPlaceholder(size: 48),
+              ),
+              const SizedBox(width: 12),
+              Expanded(child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(pl.name, style: AppText.title(size: 14)),
+                    const SizedBox(height: 2),
+                    Text('${pl.tracks.length} songs', style: AppText.subtitle()),
+                  ])),
+            ]),
           ),
-          const SizedBox(height: 20),
-          Text('Delete "${pl.name}"?',
-              style: GoogleFonts.inter(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.white)),
-          const SizedBox(height: 6),
-          Text('This cannot be undone.',
-              style: GoogleFonts.inter(
-                  fontSize: 12, color: Colors.grey.shade500)),
-          const SizedBox(height: 20),
-          Row(children: [
-            Expanded(
-              child: GestureDetector(
-                onTap: () => Navigator.pop(context),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  decoration: BoxDecoration(
-                      border: Border.all(color: Colors.grey.shade800),
-                      borderRadius: BorderRadius.circular(8)),
-                  child: Center(
-                      child: Text('CANCEL',
-                          style: GoogleFonts.inter(
-                              fontSize: 12,
-                              color: Colors.grey.shade400,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: 1.5))),
-                ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: GestureDetector(
-                onTap: () {
-                  LibraryService.deletePlaylist(pl.id);
-                  Navigator.pop(context);
-                  _load();
-                },
-                child: Container(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  decoration: BoxDecoration(
-                      color: const Color(0xFFFF3B30),
-                      borderRadius: BorderRadius.circular(8)),
-                  child: Center(
-                      child: Text('DELETE',
-                          style: GoogleFonts.inter(
-                              fontSize: 12,
-                              color: Colors.white,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: 1.5))),
-                ),
-              ),
-            ),
-          ]),
+          Divider(color: AppColors.border, height: 24),
+          ListTile(
+            leading: Icon(Icons.edit_rounded, color: AppColors.textSecondary, size: 20),
+            title: Text('Rename', style: AppText.title(size: 14)),
+            onTap: () { Navigator.pop(context); _renamePlaylist(pl); },
+            dense: true,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 20),
+          ),
+          ListTile(
+            leading: const Icon(Icons.delete_outline_rounded,
+                color: AppColors.accent, size: 20),
+            title: Text('Delete playlist',
+                style: AppText.title(size: 14, color: AppColors.accent)),
+            onTap: () {
+              HapticFeedback.mediumImpact();
+              LibraryService.deletePlaylist(pl.id);
+              Navigator.pop(context);
+              _load();
+            },
+            dense: true,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 20),
+          ),
         ]),
       ),
     );
   }
+
+  void _renamePlaylist(LocalPlaylist pl) {
+    String name = pl.name;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.surface,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => Padding(
+        padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom + 32,
+            top: 16, left: 20, right: 20),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const SheetHandle(),
+          const SizedBox(height: 20),
+          Text('Rename Playlist', style: AppText.title(size: 16)),
+          const SizedBox(height: 16),
+          TextField(
+            autofocus: true,
+            controller: TextEditingController(text: pl.name),
+            onChanged: (v) => name = v,
+            style: GoogleFonts.inter(color: Colors.white, fontSize: 15),
+            decoration: InputDecoration(
+              hintText: 'Playlist name',
+              hintStyle: AppText.subtitle(size: 15),
+              filled: true, fillColor: AppColors.elevated,
+              border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none),
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            ),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: PrimaryButton(
+              label: 'SAVE',
+              onTap: () {
+                if (name.trim().isEmpty) return;
+                LibraryService.renamePlaylist(pl.id, name.trim());
+                Navigator.pop(context);
+                _load();
+              },
+            ),
+          ),
+        ]),
+      ),
+    );
+  }
+
+  // ── Build ──────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
     return ListView(
-      padding: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.only(bottom: 140),
       children: [
-        // ── Header ────────────────────────────────────────────────────────
+        // ── Header ──────────────────────────────────────────────────────────
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 20, 16, 10),
-          child: Row(
-            children: [
-              Text(
-                'Your Library',
-                style: GoogleFonts.inter(
-                  fontSize: 26,
-                  fontWeight: FontWeight.w800,
-                  color: Colors.white,
-                  letterSpacing: -0.2,
-                ),
-              ),
-              const Spacer(),
-              Icon(Icons.search_rounded,
-                  color: Colors.grey.shade400, size: 22),
-              const SizedBox(width: 16),
-              Container(
-                width: 30,
-                height: 30,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF2A1A16),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: Colors.grey.shade800),
-                ),
-                child: const Icon(Icons.person_rounded,
-                    color: Colors.white, size: 18),
-              ),
-            ],
-          ),
+          padding: const EdgeInsets.fromLTRB(16, 20, 16, 20),
+          child: Text('Library', style: AppText.heading()),
         ),
 
-        // ── Liked Songs card ──────────────────────────────────────────────
-        GestureDetector(
-          onTap: _openLiked,
-          child: Container(
-            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: const Color(0xFF1A0808),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                  color: const Color(0xFFFF3B30).withOpacity(0.2)),
-            ),
-            child: Row(children: [
-              // Collage or icon
-              ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: _liked.isNotEmpty
-                    ? CachedNetworkImage(
-                        imageUrl: _liked.first.thumbnail,
-                        width: 56,
-                        height: 56,
-                        fit: BoxFit.cover,
-                        errorWidget: (_, __, ___) => _likedPlaceholder(),
-                      )
-                    : _likedPlaceholder(),
+        // ── Liked Songs card ─────────────────────────────────────────────────
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: GestureDetector(
+            onTap: _openLiked,
+            child: Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    AppColors.accent.withOpacity(0.18),
+                    AppColors.surface,
+                  ],
+                ),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: AppColors.accent.withOpacity(0.25)),
               ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
+              child: Row(children: [
+                Container(
+                  width: 56, height: 56,
+                  decoration: BoxDecoration(
+                    color: AppColors.accent.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: _liked.isNotEmpty
+                      ? ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: CachedNetworkImage(
+                              imageUrl: _liked.first.thumbnail,
+                              width: 56, height: 56, fit: BoxFit.cover,
+                              errorWidget: (_, __, ___) => const Icon(
+                                  Icons.favorite_rounded,
+                                  color: AppColors.accent, size: 28)))
+                      : const Icon(Icons.favorite_rounded,
+                          color: AppColors.accent, size: 28),
+                ),
+                const SizedBox(width: 14),
+                Expanded(child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Liked Songs',
-                          style: GoogleFonts.inter(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.white)),
+                      Text('Liked Songs', style: AppText.title(size: 15)),
                       const SizedBox(height: 3),
-                      Text('${_liked.length} songs',
-                          style: GoogleFonts.inter(
-                              fontSize: 12, color: Colors.grey.shade500)),
-                    ]),
-              ),
-              Icon(Icons.favorite_rounded,
-                  color: const Color(0xFFFF3B30), size: 20),
-              const SizedBox(width: 4),
-              Icon(Icons.chevron_right_rounded,
-                  color: Colors.grey.shade700, size: 22),
-            ]),
+                      Text(
+                        _liked.isEmpty
+                            ? 'No liked songs yet'
+                            : '${_liked.length} songs',
+                        style: AppText.subtitle(),
+                      ),
+                    ])),
+                Icon(Icons.chevron_right_rounded,
+                    color: AppColors.textMuted, size: 22),
+              ]),
+            ),
           ),
         ),
 
-        // ── Playlists ─────────────────────────────────────────────────────
-        if (_playlists.isNotEmpty) ...[
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 20, 16, 10),
-            child: Row(
-              children: [
-                Text('Your Playlists',
-                    style: GoogleFonts.inter(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.white)),
-                const Spacer(),
-                GestureDetector(
-                  onTap: _createPlaylist,
-                  child: Text('New Playlist',
-                      style: GoogleFonts.inter(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: const Color(0xFFFF3B30))),
-                ),
-              ],
-            ),
-          ),
-          ..._playlists.map((pl) => _playlistTile(pl)),
-        ],
+        const SizedBox(height: 28),
 
+        // ── Playlists header ─────────────────────────────────────────────────
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          child: Row(children: [
+            Text('PLAYLISTS', style: AppText.label()),
+            const Spacer(),
+            GestureDetector(
+              onTap: _createPlaylist,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: AppColors.elevated,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: AppColors.border),
+                ),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  const Icon(Icons.add_rounded, color: AppColors.accent, size: 16),
+                  const SizedBox(width: 4),
+                  Text('NEW', style: AppText.label(color: AppColors.accent)),
+                ]),
+              ),
+            ),
+          ]),
+        ),
+
+        // ── Playlist list ────────────────────────────────────────────────────
         if (_playlists.isEmpty)
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
-            child: Center(
-              child: Text('No playlists yet — tap + NEW PLAYLIST',
-                  style: GoogleFonts.inter(
-                      fontSize: 12, color: Colors.grey.shade700)),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+            child: Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: Column(children: [
+                Icon(Icons.library_music_outlined,
+                    size: 40, color: AppColors.textMuted),
+                const SizedBox(height: 12),
+                Text('No playlists yet', style: AppText.title(size: 14)),
+                const SizedBox(height: 6),
+                Text('Tap NEW to create your first one',
+                    style: AppText.subtitle(), textAlign: TextAlign.center),
+              ]),
             ),
-          ),
+          )
+        else
+          ..._playlists.map((pl) => _playlistTile(pl)),
       ],
     );
   }
 
-  Widget _likedPlaceholder() => Container(
-        width: 56,
-        height: 56,
-        color: const Color(0xFF2A0A0A),
-        child: const Icon(Icons.favorite_rounded,
-            color: Color(0xFFFF3B30), size: 28),
-      );
-
   Widget _playlistTile(LocalPlaylist pl) {
     return GestureDetector(
       onTap: () => _openPlaylist(pl),
-      onLongPress: () => _deletePlaylist(pl),
+      onLongPress: () => _showPlaylistOptions(pl),
       behavior: HitTestBehavior.opaque,
-      child: Container(
-        decoration: BoxDecoration(
-            border: Border(
-                bottom:
-                    BorderSide(color: Colors.grey.shade900, width: 0.5))),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
         child: Row(children: [
           ClipRRect(
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(10),
             child: pl.thumbnailUrl.isNotEmpty
                 ? CachedNetworkImage(
                     imageUrl: pl.thumbnailUrl,
-                    width: 52,
-                    height: 52,
-                    fit: BoxFit.cover,
-                    errorWidget: (_, __, ___) => _plPlaceholder(),
-                  )
-                : _plPlaceholder(),
+                    width: 54, height: 54, fit: BoxFit.cover,
+                    errorWidget: (_, __, ___) => const ThumbPlaceholder(size: 54, radius: 10))
+                : const ThumbPlaceholder(size: 54, radius: 10),
           ),
           const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(pl.name,
-                      style: GoogleFonts.inter(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.white),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis),
-                  const SizedBox(height: 3),
-                  Text('${pl.tracks.length} songs',
-                      style: GoogleFonts.inter(
-                          fontSize: 11, color: Colors.grey.shade600)),
-                ]),
+          Expanded(child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(pl.name,
+                    style: AppText.title(size: 14),
+                    maxLines: 1, overflow: TextOverflow.ellipsis),
+                const SizedBox(height: 3),
+                Text('${pl.tracks.length} songs', style: AppText.subtitle()),
+              ])),
+          GestureDetector(
+            onTap: () => _showPlaylistOptions(pl),
+            child: Padding(
+              padding: const EdgeInsets.all(8),
+              child: Icon(Icons.more_vert_rounded,
+                  color: AppColors.textMuted, size: 20),
+            ),
           ),
-          Icon(Icons.chevron_right_rounded,
-              color: Colors.grey.shade700, size: 22),
         ]),
       ),
     );
   }
-
-  Widget _plPlaceholder() => Container(
-        width: 52,
-        height: 52,
-        color: const Color(0xFF1C1C1C),
-        child: Icon(Icons.queue_music_rounded,
-            size: 26, color: Colors.grey.shade700),
-      );
 }

@@ -1,40 +1,38 @@
+// ui/widgets/mini_player_bar.dart
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 import '../../controllers/player_controller.dart';
+import '../app_theme.dart';
 import '../now_playing_screen.dart';
 
 class MiniPlayerBar extends StatelessWidget {
   final bool showBottomNavGap;
-
-  /// If true, leaves space for the bottom nav (used on `PlayerScreen`).
   const MiniPlayerBar({super.key, this.showBottomNavGap = false});
 
-  static const double height = 72;
+  static const double height          = 68;
   static const double bottomNavHeight = 56;
 
   @override
   Widget build(BuildContext context) {
     final pc = Get.find<PlayerController>();
     return Obx(() {
-      final song = pc.currentSong.value;
-      final state = pc.buttonState.value;
-      final art = song?.artUri?.toString() ?? '';
+      final song   = pc.currentSong.value;
+      final state  = pc.buttonState.value;
+      final art    = song?.artUri?.toString() ?? '';
       final bottomSafe = MediaQuery.of(context).padding.bottom;
 
       return Positioned(
-        left: 12,
-        right: 12,
-        bottom: (showBottomNavGap ? bottomNavHeight : 0) + bottomSafe + 14,
+        left: 12, right: 12,
+        bottom: (showBottomNavGap ? bottomNavHeight : 0) + bottomSafe + 10,
         child: AnimatedSwitcher(
-          duration: const Duration(milliseconds: 220),
+          duration: const Duration(milliseconds: 250),
           switchInCurve: Curves.easeOutCubic,
-          switchOutCurve: Curves.easeOutCubic,
+          switchOutCurve: Curves.easeInCubic,
           transitionBuilder: (child, anim) {
             final slide = Tween<Offset>(
-              begin: const Offset(0, 0.15),
+              begin: const Offset(0, 0.2),
               end: Offset.zero,
             ).chain(CurveTween(curve: Curves.easeOutCubic));
             return FadeTransition(
@@ -49,56 +47,65 @@ class MiniPlayerBar extends StatelessWidget {
                   onTap: () => Navigator.of(context).push(_slideUp()),
                   child: Container(
                     height: height,
-                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF121212),
-                      borderRadius: BorderRadius.circular(22),
-                      border: Border.all(color: const Color(0xFF1F1F1F)),
+                      color: AppColors.surface,
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(color: AppColors.border),
                       boxShadow: const [
                         BoxShadow(
-                          color: Color(0x66000000),
-                          blurRadius: 26,
-                          offset: Offset(0, 14),
+                          color: Color(0x88000000),
+                          blurRadius: 28,
+                          offset: Offset(0, 12),
                         ),
                       ],
                     ),
-                    child: Row(
-                      children: [
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(14),
-                          child: art.isNotEmpty
-                              ? CachedNetworkImage(
-                                  imageUrl: art,
-                                  width: 48,
-                                  height: 48,
-                                  fit: BoxFit.cover,
-                                  errorWidget: (_, __, ___) =>
-                                      _thumbPlaceholder(),
-                                )
-                              : _thumbPlaceholder(size: 48),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            song.title,
-                            style: GoogleFonts.inter(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.white,
-                              letterSpacing: 0.1,
+                    child: Row(children: [
+                      // Artwork
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: art.isNotEmpty
+                            ? CachedNetworkImage(
+                                imageUrl: art,
+                                width: 46, height: 46, fit: BoxFit.cover,
+                                errorWidget: (_, __, ___) =>
+                                    const ThumbPlaceholder(size: 46, radius: 12))
+                            : const ThumbPlaceholder(size: 46, radius: 12),
+                      ),
+                      const SizedBox(width: 12),
+                      // Title + Artist
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              song.title,
+                              style: AppText.title(size: 13),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
+                            if ((song.artist ?? '').isNotEmpty) ...[
+                              const SizedBox(height: 2),
+                              Text(
+                                song.artist!,
+                                style: AppText.subtitle(size: 11),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ],
                         ),
-                        const SizedBox(width: 8),
-                        _playPause(pc, state),
-                        _iconBtn(
-                          icon: Icons.skip_next_rounded,
-                          onTap: pc.next,
-                        ),
-                      ],
-                    ),
+                      ),
+                      const SizedBox(width: 4),
+                      // Play/Pause
+                      _playPause(pc, state),
+                      // Next
+                      _iconBtn(icon: Icons.skip_next_rounded, onTap: () {
+                        AppHaptics.light();
+                        pc.next();
+                      }),
+                    ]),
                   ),
                 ),
         ),
@@ -106,21 +113,13 @@ class MiniPlayerBar extends StatelessWidget {
     });
   }
 
-  Widget _thumbPlaceholder({double size = 42}) => Container(
-        width: size,
-        height: size,
-        color: const Color(0xFF1C1C1C),
-        child: Icon(Icons.music_note_rounded,
-            size: 18, color: Colors.grey.shade700),
-      );
-
   Widget _iconBtn({required IconData icon, required VoidCallback onTap}) =>
       GestureDetector(
         onTap: onTap,
         behavior: HitTestBehavior.opaque,
         child: Padding(
           padding: const EdgeInsets.all(8),
-          child: Icon(icon, color: Colors.white, size: 26),
+          child: Icon(icon, color: Colors.white, size: 24),
         ),
       );
 
@@ -129,8 +128,7 @@ class MiniPlayerBar extends StatelessWidget {
       return const Padding(
         padding: EdgeInsets.all(8),
         child: SizedBox(
-          width: 20,
-          height: 20,
+          width: 20, height: 20,
           child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
         ),
       );
@@ -139,7 +137,10 @@ class MiniPlayerBar extends StatelessWidget {
       icon: state == PlayButtonState.playing
           ? Icons.pause_rounded
           : Icons.play_arrow_rounded,
-      onTap: () => state == PlayButtonState.playing ? pc.pause() : pc.play(),
+      onTap: () {
+        AppHaptics.light();
+        state == PlayButtonState.playing ? pc.pause() : pc.play();
+      },
     );
   }
 
@@ -153,4 +154,3 @@ class MiniPlayerBar extends StatelessWidget {
         transitionDuration: const Duration(milliseconds: 350),
       );
 }
-

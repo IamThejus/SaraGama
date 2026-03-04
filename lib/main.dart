@@ -15,6 +15,7 @@ void main() async {
   await Hive.openBox('AppPrefs');
   await Hive.openBox('SongsUrlCache');
   await Hive.openBox('LibraryBox');
+  await Hive.openBox('CacheBox');
 
   // ── Register audio handler (same as HarmonyMusic) ─────────────────────────
   final audioHandler = await initAudioService();

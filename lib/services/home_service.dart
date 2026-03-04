@@ -30,6 +30,20 @@ class TrendingPlaylist {
       thumbnailUrl: ThumbUtil.get(rawUrl, ThumbnailSize.medium),
     );
   }
+
+  /// For cache serialization — already-processed fields, no thumb transform needed.
+  factory TrendingPlaylist.fromCacheJson(Map<String, dynamic> json) =>
+      TrendingPlaylist(
+        title: json['title'] ?? '',
+        playlistId: json['playlistId'] ?? '',
+        thumbnailUrl: json['thumbnailUrl'] ?? '',
+      );
+
+  Map<String, dynamic> toJson() => {
+        'title': title,
+        'playlistId': playlistId,
+        'thumbnailUrl': thumbnailUrl,
+      };
 }
 
 class TrendingArtist {
@@ -65,6 +79,25 @@ class TrendingArtist {
       trend: json['trend']?.toString() ?? 'neutral',
     );
   }
+
+  factory TrendingArtist.fromCacheJson(Map<String, dynamic> json) =>
+      TrendingArtist(
+        title: json['title'] ?? '',
+        browseId: json['browseId'] ?? '',
+        subscribers: json['subscribers'] ?? '',
+        thumbnailUrl: json['thumbnailUrl'] ?? '',
+        rank: json['rank'] ?? '',
+        trend: json['trend'] ?? 'neutral',
+      );
+
+  Map<String, dynamic> toJson() => {
+        'title': title,
+        'browseId': browseId,
+        'subscribers': subscribers,
+        'thumbnailUrl': thumbnailUrl,
+        'rank': rank,
+        'trend': trend,
+      };
 }
 
 class HomeData {
@@ -92,6 +125,25 @@ class HomeData {
                 TrendingArtist.fromJson(Map<String, dynamic>.from(e)))
             .toList(),
       );
+
+  /// Reconstruct from cached (already-processed) JSON.
+  factory HomeData.fromCacheJson(Map<String, dynamic> json) => HomeData(
+        daily: (json['daily'] as List? ?? [])
+            .map((e) => TrendingPlaylist.fromCacheJson(Map<String, dynamic>.from(e)))
+            .toList(),
+        weekly: (json['weekly'] as List? ?? [])
+            .map((e) => TrendingPlaylist.fromCacheJson(Map<String, dynamic>.from(e)))
+            .toList(),
+        artists: (json['artists'] as List? ?? [])
+            .map((e) => TrendingArtist.fromCacheJson(Map<String, dynamic>.from(e)))
+            .toList(),
+      );
+
+  Map<String, dynamic> toJson() => {
+        'daily':   daily.map((e) => e.toJson()).toList(),
+        'weekly':  weekly.map((e) => e.toJson()).toList(),
+        'artists': artists.map((e) => e.toJson()).toList(),
+      };
 }
 
 class HomeService {
