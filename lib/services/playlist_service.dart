@@ -2,6 +2,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'cache_service.dart';
+import 'thumb_util.dart';
 
 class PlaylistTrack {
   final String videoId;
@@ -46,12 +47,9 @@ class PlaylistTrack {
     );
   }
 
-  static String _upgradeThumb(String url) {
-    if (url.isEmpty) return url;
-    return url
-        .replaceAll(RegExp(r'=w\d+-h\d+[^ ]*$'), '=w544-h544-l90-rj')
-        .replaceAll(RegExp(r'=s\d+[^ ]*$'), '=w544-h544-l90-rj');
-  }
+  /// Track thumbnails render at 46px in list tiles → use tile size (96px).
+  static String _upgradeThumb(String url) =>
+      ThumbUtil.get(url, ThumbnailSize.tile);
 
   factory PlaylistTrack.fromCacheJson(Map<String, dynamic> json) =>
       PlaylistTrack(

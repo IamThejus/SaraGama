@@ -72,8 +72,12 @@ class MyAudioHandler extends BaseAudioHandler with GetxServiceMixin {
     _player = AudioPlayer(
       audioLoadConfiguration: const AudioLoadConfiguration(
         androidLoadControl: AndroidLoadControl(
-          minBufferDuration: Duration(seconds: 50),
-          maxBufferDuration: Duration(seconds: 120),
+          // Reduced from 120s → 30s. Saves ~2MB per skip vs old behaviour.
+          // bufferForPlaybackDuration kept at original 50ms — critical for
+          // LockCachingAudioSource compatibility (higher values cause a
+          // position/duration race that triggers infinite song-skip loops).
+          minBufferDuration: Duration(seconds: 20),
+          maxBufferDuration: Duration(seconds: 30),
           bufferForPlaybackDuration: Duration(milliseconds: 50),
           bufferForPlaybackAfterRebufferDuration: Duration(seconds: 2),
         ),

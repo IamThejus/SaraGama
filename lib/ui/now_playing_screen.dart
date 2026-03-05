@@ -10,6 +10,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../controllers/lyrics_controller.dart';
 import '../controllers/player_controller.dart';
 import '../services/library_service.dart';
+import '../services/thumb_util.dart';
 import 'app_theme.dart';
 import 'widgets/lyrics_button.dart';
 
@@ -95,7 +96,12 @@ class _NowPlayingScreenState extends State<NowPlayingScreen>
           // ── Artwork — shrinks when paused ──────────────────────────────────
           Obx(() {
             final song = pc.currentSong.value;
-            final artUrl = song?.artUri?.toString() ?? '';
+            // Upgrade to full 544px art — tile-size URLs stored at queue time
+            // are too small for the large now-playing artwork display.
+            final rawArt = song?.artUri?.toString() ?? '';
+            final artUrl = rawArt.isNotEmpty
+                ? ThumbUtil.upgrade(rawArt, ThumbnailSize.art)
+                : '';
             final playing = pc.buttonState.value == PlayButtonState.playing;
             final size = playing ? artSize : artSize * 0.86;
             return AnimatedContainer(

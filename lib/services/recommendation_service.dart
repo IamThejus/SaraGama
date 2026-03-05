@@ -36,29 +36,51 @@ class RecommendedTrack {
       artist: json['artist'] ?? '',
       // Always store a high-quality thumbnail for recommendations so
       // now playing + notification art look sharp.
-      thumbnail: ThumbUtil.get(rawThumb, ThumbnailSize.large),
+      thumbnail: ThumbUtil.get(rawThumb, ThumbnailSize.tile),
       duration: json['duration'] ?? '',
     );
   }
 }
 
 class RecommendationService {
-  static const _base = 'https://saragama-render.onrender.com';
+  static const _base       = 'https://saragama-render.onrender.com';
+  static const _ttlMinutes = 60; // recommendations don't change within an hour
 
-  static Future<List<RecommendedTrack>> getRecommendations(String videoId) async {
+  // In-memory cache: videoId → (tracks, timestamp)
+  // Recommendations are per-video so a simple map is sufficient — no LRU
+  // needed since the number of unique played videos per session is small.
+  static final _cache =
+      <String, ({List<RecommendedTrack> tracks, DateTime ts})>{};
+
+  static Future<List<RecommendedTrack>> getRecommendations(
+      String videoId) async {
     if (videoId.isEmpty) return [];
+
+    // 1. Return cached recommendations if still fresh
+    final cached = _cache[videoId];
+    if (cached != null) {
+      final age = DateTime.now().difference(cached.ts).inMinutes;
+      if (age < _ttlMinutes) return cached.tracks;
+      _cache.remove(videoId); // stale, remove
+    }
+
+    // 2. Fetch from API
     try {
       final uri = Uri.parse('$_base/recommendation')
           .replace(queryParameters: {'video_id': videoId});
       final res = await http.get(uri).timeout(const Duration(seconds: 10));
       if (res.statusCode == 200) {
         final List data = json.decode(res.body);
-        return data
+        final tracks = data
             .map((e) => RecommendedTrack.fromJson(Map<String, dynamic>.from(e)))
             .where((t) => t.videoId.isNotEmpty)
             .toList();
+        _cache[videoId] = (tracks: tracks, ts: DateTime.now());
+        return tracks;
       }
     } catch (_) {}
     return [];
   }
+
+  static void clearCache() => _cache.clear();
 }

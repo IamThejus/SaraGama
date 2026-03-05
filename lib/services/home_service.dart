@@ -27,7 +27,7 @@ class TrendingPlaylist {
       title: json['title'] ?? '',
       playlistId: json['playlistId'] ?? '',
       // Use a consistent medium/large thumbnail for cards.
-      thumbnailUrl: ThumbUtil.get(rawUrl, ThumbnailSize.medium),
+      thumbnailUrl: ThumbUtil.get(rawUrl, ThumbnailSize.card),
     );
   }
 
@@ -74,7 +74,7 @@ class TrendingArtist {
       title: json['title'] ?? '',
       browseId: json['browseId'] ?? '',
       subscribers: json['subscribers']?.toString() ?? '',
-      thumbnailUrl: ThumbUtil.get(rawUrl, ThumbnailSize.small),
+      thumbnailUrl: ThumbUtil.get(rawUrl, ThumbnailSize.tile),
       rank: json['rank']?.toString() ?? '',
       trend: json['trend']?.toString() ?? 'neutral',
     );
