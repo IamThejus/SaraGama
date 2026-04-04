@@ -1,3 +1,9 @@
+<div align="center">
+  <img src="assets/banner.png" alt="SaraGama Banner" width="100%"/>
+</div>
+
+---
+
 # 🎵 SaraGama — YouTube Audio Player
 
 A cross-platform Flutter music player that streams audio from YouTube. Search for songs, play them instantly, build a queue, and control playback — all with no ads and no video, just audio.
@@ -6,7 +12,9 @@ A cross-platform Flutter music player that streams audio from YouTube. Search fo
 
 ## 📱 Screenshots
 
-> Player screen with now-playing card, progress bar, and queue panel.
+<div align="center">
+  <img src="assets/banner.png" alt="SaraGama App Screenshots" width="100%"/>
+</div>
 
 ---
 
