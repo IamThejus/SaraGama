@@ -13,14 +13,15 @@ A cross-platform Flutter music player that streams audio from YouTube. Search fo
 ## 📱 Screenshots
 
 <div align="center">
-  <img src="assets/screen_home.jpg" width="18%" alt="Home"/>
-  <img src="assets/screen_search.jpg" width="18%" alt="Search"/>
-  <img src="assets/screen_player.jpg" width="18%" alt="Now Playing"/>
-  <img src="assets/screen_lyrics.jpg" width="18%" alt="Lyrics"/>
-  <img src="assets/screen_queue.jpg" width="18%" alt="Queue"/>
+  <img src="assets/screen_home.jpg" width="30%" alt="Home"/>
+  <img src="assets/screen_search.jpg" width="30%" alt="Search"/>
+  <img src="assets/screen_player.jpg" width="30%" alt="Now Playing"/>
 </div>
+<br/>
 <div align="center">
-  <img src="assets/screen_library.jpg" width="18%" alt="Library"/>
+  <img src="assets/screen_lyrics.jpg" width="30%" alt="Lyrics"/>
+  <img src="assets/screen_queue.jpg" width="30%" alt="Queue"/>
+  <img src="assets/screen_library.jpg" width="30%" alt="Library"/>
 </div>
 
 ---
