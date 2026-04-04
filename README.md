@@ -13,7 +13,14 @@ A cross-platform Flutter music player that streams audio from YouTube. Search fo
 ## 📱 Screenshots
 
 <div align="center">
-  <img src="assets/banner.png" alt="SaraGama App Screenshots" width="100%"/>
+  <img src="assets/screen_home.jpg" width="18%" alt="Home"/>
+  <img src="assets/screen_search.jpg" width="18%" alt="Search"/>
+  <img src="assets/screen_player.jpg" width="18%" alt="Now Playing"/>
+  <img src="assets/screen_lyrics.jpg" width="18%" alt="Lyrics"/>
+  <img src="assets/screen_queue.jpg" width="18%" alt="Queue"/>
+</div>
+<div align="center">
+  <img src="assets/screen_library.jpg" width="18%" alt="Library"/>
 </div>
 
 ---
