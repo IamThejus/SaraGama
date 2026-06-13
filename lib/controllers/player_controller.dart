@@ -2,6 +2,7 @@
 import 'package:audio_service/audio_service.dart';
 import 'package:get/get.dart';
 import 'package:hive/hive.dart';
+import '../services/autoplay_orchestrator.dart';
 import '../services/library_service.dart';
 import '../services/recommendation_service.dart';
 
@@ -17,6 +18,62 @@ class ProgressBarState {
 }
 
 enum PlayButtonState { paused, playing, loading }
+
+/// Immutable snapshot of the player's observable state.
+///
+/// Consolidates the individual `Rx<…>` fields below into a single value that
+/// can be read or subscribed to atomically. This avoids the "play button
+/// shows playing but title is still old" race that the multi-field design
+/// allows between events.
+///
+/// Step 3 is additive: the existing `Rx<…>` fields keep working and are
+/// updated in parallel. UI consumers can opt into `playerState` when
+/// convenient; nothing is forced to migrate.
+class PlayerState {
+  final MediaItem? currentSong;
+  final PlayButtonState buttonState;
+  final ProgressBarState progressBarState;
+  final String? errorMessage;
+  final bool isLoopEnabled;
+  final bool isShuffleEnabled;
+
+  const PlayerState({
+    this.currentSong,
+    this.buttonState = PlayButtonState.paused,
+    this.progressBarState = const ProgressBarState(
+      current: Duration.zero,
+      buffered: Duration.zero,
+      total: Duration.zero,
+    ),
+    this.errorMessage,
+    this.isLoopEnabled = false,
+    this.isShuffleEnabled = false,
+  });
+
+  /// Copy with explicit clearing semantics for nullable fields.
+  /// Pass `clearSong: true` to set currentSong to null; passing
+  /// `currentSong: null` (the default) means "keep the existing value".
+  /// Same pattern for errorMessage / clearError.
+  PlayerState copyWith({
+    MediaItem? currentSong,
+    bool clearSong = false,
+    PlayButtonState? buttonState,
+    ProgressBarState? progressBarState,
+    String? errorMessage,
+    bool clearError = false,
+    bool? isLoopEnabled,
+    bool? isShuffleEnabled,
+  }) {
+    return PlayerState(
+      currentSong: clearSong ? null : (currentSong ?? this.currentSong),
+      buttonState: buttonState ?? this.buttonState,
+      progressBarState: progressBarState ?? this.progressBarState,
+      errorMessage: clearError ? null : (errorMessage ?? this.errorMessage),
+      isLoopEnabled: isLoopEnabled ?? this.isLoopEnabled,
+      isShuffleEnabled: isShuffleEnabled ?? this.isShuffleEnabled,
+    );
+  }
+}
 
 class PlayerController extends GetxController {
   final AudioHandler audioHandler;
@@ -37,44 +94,85 @@ class PlayerController extends GetxController {
   final isCurrentSongLiked = false.obs;
   final searchHistory      = <LibraryTrack>[].obs;
 
+  /// Consolidated immutable playback-state snapshot.
+  /// Mirrors the individual `Rx<…>` fields above. UI may subscribe to either;
+  /// they are kept in sync by the listeners in onInit(). See [PlayerState].
+  final playerState = Rx<PlayerState>(const PlayerState());
+
+  /// Watermark-driven queue refill. Created in onInit, stopped in onClose.
+  late final AutoplayOrchestrator _autoplay;
+
   @override
   void onInit() {
     _loadSearchHistory();
 
     audioHandler.mediaItem.listen((item) {
       currentSong.value = item;
+      playerState.value = playerState.value.copyWith(
+        currentSong: item,
+        clearSong: item == null,
+      );
       if (item != null) {
         isCurrentSongLiked.value = LibraryService.isLiked(item.id);
         _saveSession();
       }
     });
 
-    audioHandler.playbackState.listen((state) {
-      final p = state.processingState;
+    audioHandler.playbackState.listen((pbState) {
+      final p = pbState.processingState;
+      final PlayButtonState newButtonState;
       if (p == AudioProcessingState.loading ||
           p == AudioProcessingState.buffering) {
-        buttonState.value = PlayButtonState.loading;
-      } else if (!state.playing) {
-        buttonState.value = PlayButtonState.paused;
+        newButtonState = PlayButtonState.loading;
+      } else if (!pbState.playing) {
+        newButtonState = PlayButtonState.paused;
       } else {
-        buttonState.value = PlayButtonState.playing;
+        newButtonState = PlayButtonState.playing;
       }
+      buttonState.value = newButtonState;
+      playerState.value =
+          playerState.value.copyWith(buttonState: newButtonState);
     });
 
     AudioService.position.listen((pos) {
       final duration = currentSong.value?.duration ?? Duration.zero;
       final buffered = audioHandler.playbackState.value.bufferedPosition;
-      progressBarState.value = ProgressBarState(
+      final newBar = ProgressBarState(
         current: pos, buffered: buffered, total: duration,
       );
+      progressBarState.value = newBar;
+      playerState.value = playerState.value.copyWith(progressBarState: newBar);
     });
 
     final q = Hive.box('AppPrefs').get('streamingQuality') ?? 1;
     isHighQuality.value = q == 1;
 
+    // Watermark-driven autoplay refill. Started AFTER the queue listeners
+    // above so its own queue listener sees the same events. The callback
+    // routes through addToQueue so QueueManager bookkeeping stays in sync.
+    _autoplay = AutoplayOrchestrator(
+      audioHandler: audioHandler,
+      onTracksReady: (tracks) async {
+        for (final t in tracks) {
+          await addToQueue(t.videoId,
+              title: t.title,
+              artist: t.artist,
+              thumbnail: t.thumbnail,
+              duration: t.durationValue);
+        }
+      },
+    );
+    _autoplay.start();
+
     Future.delayed(const Duration(milliseconds: 500), _restoreSession);
 
     super.onInit();
+  }
+
+  @override
+  void onClose() {
+    _autoplay.stop();
+    super.onClose();
   }
 
   // ── Playback controls ─────────────────────────────────────────────────────
@@ -87,6 +185,8 @@ class PlayerController extends GetxController {
 
   void toggleLoop() {
     isLoopEnabled.value = !isLoopEnabled.value;
+    playerState.value =
+        playerState.value.copyWith(isLoopEnabled: isLoopEnabled.value);
     audioHandler.setRepeatMode(
       isLoopEnabled.value
           ? AudioServiceRepeatMode.one
@@ -96,6 +196,8 @@ class PlayerController extends GetxController {
 
   void toggleShuffle() {
     isShuffleEnabled.value = !isShuffleEnabled.value;
+    playerState.value =
+        playerState.value.copyWith(isShuffleEnabled: isShuffleEnabled.value);
     audioHandler.setShuffleMode(
       isShuffleEnabled.value
           ? AudioServiceShuffleMode.all
@@ -120,6 +222,7 @@ class PlayerController extends GetxController {
     Duration? duration,
   }) async {
     errorMessage.value = null;
+    playerState.value = playerState.value.copyWith(clearError: true);
     final song = MediaItem(
       id: videoId,
       title: title ?? videoId,
@@ -156,9 +259,20 @@ class PlayerController extends GetxController {
     String? thumbnail,
     Duration? duration,
   }) async {
+    // Kick off rec fetch BEFORE awaiting URL resolution so the queue
+    // populates in parallel with playback start, not serially after it.
+    // Without this, the queue stays at length 1 for as long as the URL
+    // fetch takes — meaning "next" early in playback finds no next song
+    // and seek-zero-pauses the current track (user-visible: replay).
+    final recsFuture = RecommendationService.getRecommendations(videoId);
+
     await playVideoId(videoId,
         title: title, artist: artist, thumbnail: thumbnail, duration: duration);
-    RecommendationService.getRecommendations(videoId).then((recs) {
+
+    recsFuture.then((recs) {
+      // If the user already navigated away to a different song, don't
+      // pollute the new queue with stale recommendations.
+      if (currentSong.value?.id != videoId) return;
       for (final r in recs) {
         addToQueue(r.videoId,
             title: r.title,
@@ -281,7 +395,10 @@ class PlayerController extends GetxController {
     } catch (_) {}
   }
 
-  void notifyError(String msg) => errorMessage.value = msg;
+  void notifyError(String msg) {
+    errorMessage.value = msg;
+    playerState.value = playerState.value.copyWith(errorMessage: msg);
+  }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
 

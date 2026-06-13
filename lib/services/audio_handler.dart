@@ -1,14 +1,19 @@
 // audio_handler.dart
-// Mirrors HarmonyMusic's MyAudioHandler architecture:
-//   - BaseAudioHandler + GetxServiceMixin
-//   - checkNGetUrl() with Hive URL cache + Isolate fetching
-//   - LockCachingAudioSource for transparent disk caching
-//   - Loop, shuffle, queue-loop, loudness normalisation
-//   - Custom actions as the internal command bus
+// MyAudioHandler is the audio_service-facing layer:
+//   - BaseAudioHandler + GetxServiceMixin (notification / lockscreen contract)
+//   - queue / mediaItem / playbackState BehaviorSubjects
+//   - customAction command bus (UI talks to playback only through here)
+//   - URL resolution via checkNGetUrl() + isolate-backed YouTube fetching
+//
+// The actual player (AudioPlayer + ConcatenatingAudioSource), the
+// PlaybackPhase state machine, the audio-source factory, loudness
+// normalization, and the auto-advance trigger live in PlaybackEngine.
+// The queue's permutation/shuffle/loop logic lives in QueueManager.
+// Predictive recommendation refill lives in AutoplayOrchestrator
+// (wired from PlayerController).
 
 import 'dart:io';
 import 'dart:isolate';
-import 'dart:math';
 
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/services.dart';
@@ -19,6 +24,8 @@ import 'package:path_provider/path_provider.dart';
 
 import '../models/hm_streaming_data.dart';
 import '../services/background_task.dart';
+import '../services/playback_engine.dart';
+import '../services/queue_manager.dart';
 import '../controllers/player_controller.dart';
 
 Future<AudioHandler> initAudioService() async {
@@ -49,75 +56,81 @@ bool _isUrlExpired(String url) {
 // ── MyAudioHandler ─────────────────────────────────────────────────────────
 
 class MyAudioHandler extends BaseAudioHandler with GetxServiceMixin {
-  late final String _cacheDir;
-  late final AudioPlayer _player;
-
   dynamic currentIndex;
   late String? currentSongUrl;
-  bool isPlayingUsingLockCachingSource = false;
+
+  /// Playback mode flag (loop ONE track on natural end). Orthogonal to the
+  /// queue-loop flag (which lives on QueueManager). Persisted in Hive.
   bool loopModeEnabled = false;
-  bool queueLoopModeEnabled = false;
-  bool shuffleModeEnabled = false;
-  bool loudnessNormalizationEnabled = false;
-  bool isSongLoading = true;
-  bool _isTransitioning = false; // prevents double-trigger on song end
 
-  List<String> shuffledQueue = [];
-  int currentShuffleIndex = 0;
+  /// Temp-dir path used by LockCachingAudioSource. Computed asynchronously
+  /// in [_initCacheDir]; empty until then. The engine reads it lazily via
+  /// the `getCacheDir` callback and falls back to a plain URI source when
+  /// it's still empty.
+  String _cacheDir = '';
 
-  final _playList =
-      ConcatenatingAudioSource(children: [], useLazyPreparation: false);
+  // ── Queue state ───────────────────────────────────────────────────────
+  // Owned by QueueManager. Backward-compat getters for any historical
+  // call site that reads these as instance fields on MyAudioHandler.
+  final _queueMgr = QueueManager();
+  bool get shuffleModeEnabled => _queueMgr.shuffleEnabled;
+  bool get queueLoopModeEnabled => _queueMgr.queueLoopEnabled;
+
+  // ── Playback engine ───────────────────────────────────────────────────
+  // Owns the AudioPlayer, the ConcatenatingAudioSource, the PlaybackPhase
+  // state machine, the auto-advance listener, and the source factory.
+  late final PlaybackEngine _engine;
+
+  /// Backward-compat re-exports of engine state. UI / external readers can
+  /// keep using these field names; they delegate to the engine now.
+  PlaybackPhase get phase => _engine.phase;
+  bool get isSongLoading => _engine.isSongLoading;
+  bool get isPlayingUsingLockCachingSource =>
+      _engine.isPlayingUsingLockCachingSource;
+  bool get loudnessNormalizationEnabled =>
+      _engine.loudnessNormalizationEnabled;
+  set loudnessNormalizationEnabled(bool v) =>
+      _engine.loudnessNormalizationEnabled = v;
 
   MyAudioHandler() {
-    _player = AudioPlayer(
-      audioLoadConfiguration: const AudioLoadConfiguration(
-        androidLoadControl: AndroidLoadControl(
-          // Reduced from 120s → 30s. Saves ~2MB per skip vs old behaviour.
-          // bufferForPlaybackDuration kept at original 50ms — critical for
-          // LockCachingAudioSource compatibility (higher values cause a
-          // position/duration race that triggers infinite song-skip loops).
-          minBufferDuration: Duration(seconds: 20),
-          maxBufferDuration: Duration(seconds: 30),
-          bufferForPlaybackDuration: Duration(milliseconds: 50),
-          bufferForPlaybackAfterRebufferDuration: Duration(seconds: 2),
-        ),
-      ),
+    _engine = PlaybackEngine(
+      getCacheDir: () => _cacheDir,
+      shouldCacheSongs: () => Get.find<PlayerController>().cacheSongs.isTrue,
+      onTrackEnded: _triggerNext,
     );
+    _engine.init();
 
-    _createCacheDir();
-    _addEmptyPlaylist();
     _notifyAboutPlaybackEvents();
-    _listenForNextSong();
     _listenForDurationChanges();
 
     final prefs = Hive.box('AppPrefs');
     loopModeEnabled = prefs.get('loopMode') ?? false;
-    shuffleModeEnabled = prefs.get('shuffleMode') ?? false;
-    queueLoopModeEnabled = prefs.get('queueLoopMode') ?? false;
-    loudnessNormalizationEnabled =
+    _queueMgr.shuffleEnabled = prefs.get('shuffleMode') ?? false;
+    _queueMgr.queueLoopEnabled = prefs.get('queueLoopMode') ?? false;
+    _engine.loudnessNormalizationEnabled =
         prefs.get('loudnessNormalization') ?? false;
+
+    // Fire-and-forget. Until this resolves, the engine's createSource()
+    // sees an empty cacheDir and falls back to plain URI sources. By the
+    // time the first URL fetch completes the temp dir is ready.
+    _initCacheDir();
   }
 
-  // ── Init helpers ──────────────────────────────────────────────────────────
-
-  Future<void> _createCacheDir() async {
+  Future<void> _initCacheDir() async {
     _cacheDir = (await getTemporaryDirectory()).path;
     final dir = Directory('$_cacheDir/cachedSongs/');
     if (!dir.existsSync()) dir.createSync(recursive: true);
   }
 
-  void _addEmptyPlaylist() {
-    try {
-      _player.setAudioSource(_playList);
-    } catch (_) {}
-  }
-
   // ── Playback event broadcasting ────────────────────────────────────────────
+  // Bridges the AudioPlayer's PlaybackEvent stream into audio_service's
+  // playbackState subject. The notification + lockscreen controls render
+  // off this subject, so we must keep it current.
 
   void _notifyAboutPlaybackEvents() {
-    _player.playbackEventStream.listen(
+    _engine.player.playbackEventStream.listen(
       (PlaybackEvent event) {
-        final playing = _player.playing;
+        final playing = _engine.player.playing;
         playbackState.add(playbackState.value.copyWith(
           controls: [
             MediaControl.skipToPrevious,
@@ -134,54 +147,42 @@ class MyAudioHandler extends BaseAudioHandler with GetxServiceMixin {
                   ProcessingState.buffering: AudioProcessingState.buffering,
                   ProcessingState.ready: AudioProcessingState.ready,
                   ProcessingState.completed: AudioProcessingState.completed,
-                }[_player.processingState]!,
+                }[_engine.player.processingState]!,
           playing: playing,
-          updatePosition: _player.position,
-          bufferedPosition: _player.bufferedPosition,
-          speed: _player.speed,
+          updatePosition: _engine.player.position,
+          bufferedPosition: _engine.player.bufferedPosition,
+          speed: _engine.player.speed,
           queueIndex: currentIndex,
         ));
       },
       onError: (Object e, StackTrace st) async {
         // On any playback error, re-fetch a fresh URL (same recovery as HarmonyMusic)
-        final curPos = _player.position;
-        await _player.stop();
+        final curPos = _engine.player.position;
+        await _engine.player.stop();
         customAction('playByIndex', {'index': currentIndex, 'newUrl': true});
-        await _player.seek(curPos, index: 0);
+        await _engine.player.seek(curPos, index: 0);
       },
     );
   }
 
-  // ── Auto-advance to next song ─────────────────────────────────────────────
-  // HarmonyMusic uses a position-stream approach on desktop to work around
-  // media_kit timing differences. We do the same generically.
-
-  void _listenForNextSong() {
-    _player.positionStream.listen((pos) async {
-      if (_isTransitioning) return; // already handling a transition
-      if (_player.duration != null && _player.duration!.inSeconds != 0) {
-        if (pos.inMilliseconds >=
-            (_player.duration!.inMilliseconds - 200)) {
-          _isTransitioning = true;
-          await _triggerNext();
-        }
-      }
-    });
-  }
-
+  // The auto-advance trigger lives on the engine. When the engine detects
+  // the current source is within 200ms of duration during active playback,
+  // it transitions phase to 'ended' and invokes this callback. We then
+  // decide whether to loop the current source or advance the queue.
   Future<void> _triggerNext() async {
     if (loopModeEnabled) {
-      await _player.seek(Duration.zero);
-      if (!_player.playing) _player.play();
-      _isTransitioning = false;
+      await _engine.player.seek(Duration.zero);
+      if (!_engine.player.playing) _engine.player.play();
+      _engine.setPhase(PlaybackPhase.playing, reason: 'loop replay');
       return;
     }
     await skipToNext();
-    // _isTransitioning is reset inside playByIndex after new song starts
+    // Phase is advanced inside playByIndex when the new source is ready,
+    // or set to 'ready' by skipToNext's exhausted-queue branch.
   }
 
   void _listenForDurationChanges() {
-    _player.durationStream.listen((duration) async {
+    _engine.player.durationStream.listen((duration) async {
       final currQueue = queue.value;
       if (currentIndex == null || currQueue.isEmpty || duration == null) return;
       final currentSong = currQueue[currentIndex];
@@ -195,28 +196,35 @@ class MyAudioHandler extends BaseAudioHandler with GetxServiceMixin {
 
   @override
   Future<void> addQueueItems(List<MediaItem> mediaItems) async {
-    final newQueue = queue.value..addAll(mediaItems);
-    queue.add(newQueue);
-    if (shuffleModeEnabled) {
-      final ids = mediaItems.map((i) => i.id).toList();
-      shuffledQueue.addAll(ids);
+    // Dedup against the current queue. Two recommendation paths
+    // (playWithRecommendations and AutoplayOrchestrator) can race on the
+    // same seed and both try to append the same list — without this
+    // filter, songs end up repeated in identical order. Also filters
+    // dupes within the incoming batch itself.
+    final existingIds = queue.value.map((m) => m.id).toSet();
+    final filtered = <MediaItem>[];
+    for (final item in mediaItems) {
+      if (existingIds.add(item.id)) filtered.add(item);
     }
+    if (filtered.isEmpty) return;
+    final newQueue = queue.value..addAll(filtered);
+    queue.add(newQueue);
+    _queueMgr.onItemsAdded(filtered);
   }
 
   @override
   Future<void> addQueueItem(MediaItem item) async {
-    if (shuffleModeEnabled) shuffledQueue.add(item.id);
+    // Silently skip if this track is already queued. See addQueueItems
+    // comment for the race this prevents.
+    if (queue.value.any((m) => m.id == item.id)) return;
+    _queueMgr.onItemsAdded([item]);
     final newQueue = queue.value..add(item);
     queue.add(newQueue);
   }
 
   @override
   Future<void> removeQueueItem(MediaItem item) async {
-    if (shuffleModeEnabled) {
-      final idx = shuffledQueue.indexOf(item.id);
-      if (currentShuffleIndex > idx) currentShuffleIndex -= 1;
-      shuffledQueue.remove(item.id);
-    }
+    _queueMgr.onItemRemoved(item.id);
     final currQueue = queue.value;
     final currSong = mediaItem.value;
     final idx = currQueue.indexOf(item);
@@ -232,24 +240,6 @@ class MyAudioHandler extends BaseAudioHandler with GetxServiceMixin {
     queue.add(newQueue);
   }
 
-  // ── Audio source factory ───────────────────────────────────────────────────
-
-  AudioSource _createAudioSource(MediaItem item) {
-    final url = item.extras!['url'] as String;
-    if (url.startsWith('file://') ||
-        (Get.find<PlayerController>().cacheSongs.isTrue &&
-            url.startsWith('http'))) {
-      isPlayingUsingLockCachingSource = true;
-      return LockCachingAudioSource(
-        Uri.parse(url),
-        cacheFile: File('$_cacheDir/cachedSongs/${item.id}.mp3'),
-        tag: item,
-      );
-    }
-    isPlayingUsingLockCachingSource = false;
-    return AudioSource.uri(Uri.parse(url), tag: item);
-  }
-
   // ── Playback controls ─────────────────────────────────────────────────────
 
   @override
@@ -258,18 +248,27 @@ class MyAudioHandler extends BaseAudioHandler with GetxServiceMixin {
       await customAction('playByIndex', {'index': currentIndex});
       return;
     }
-    await _player.play();
+    await _engine.player.play();
+    _engine.setPhase(PlaybackPhase.playing, reason: 'user play');
   }
 
   @override
-  Future<void> pause() => _player.pause();
+  Future<void> pause() async {
+    await _engine.player.pause();
+    // Only transition if we were actually playing — pause from non-playing
+    // states (loading, ended) is a no-op for phase.
+    if (_engine.phase == PlaybackPhase.playing) {
+      _engine.setPhase(PlaybackPhase.ready, reason: 'user pause');
+    }
+  }
 
   @override
-  Future<void> seek(Duration position) => _player.seek(position);
+  Future<void> seek(Duration position) => _engine.player.seek(position);
 
   @override
   Future<void> stop() async {
-    await _player.stop();
+    await _engine.player.stop();
+    _engine.setPhase(PlaybackPhase.idle, reason: 'user stop');
     return super.stop();
   }
 
@@ -283,22 +282,34 @@ class MyAudioHandler extends BaseAudioHandler with GetxServiceMixin {
   Future<void> skipToNext() async {
     final index = _getNextSongIndex();
     if (index != currentIndex) {
-      if (_player.position != Duration.zero) _player.seek(Duration.zero);
+      if (_engine.player.position != Duration.zero) {
+        _engine.player.seek(Duration.zero);
+      }
       await customAction('playByIndex', {'index': index});
-    } else {
-      _player.seek(Duration.zero);
-      _player.pause();
+      return;
+    }
+    // Queue exhausted. Behavior depends on what triggered the skip:
+    //   - phase == ended: song ended naturally, queue is out of tracks.
+    //     Pause and reset to start so the user can replay.
+    //   - otherwise: user pressed "next" mid-playback with no next track.
+    //     Do nothing — keep playing. Restarting the current song is a
+    //     confusing default ("I asked for forward, you went backward").
+    if (_engine.phase == PlaybackPhase.ended) {
+      await _engine.player.pause();
+      await _engine.player.seek(Duration.zero);
+      _engine.setPhase(PlaybackPhase.ready,
+          reason: 'queue exhausted at end of song');
     }
   }
 
   @override
   Future<void> skipToPrevious() async {
     // HarmonyMusic: if >5 s played, restart current song
-    if (_player.position.inMilliseconds > 5000) {
-      _player.seek(Duration.zero);
+    if (_engine.player.position.inMilliseconds > 5000) {
+      _engine.player.seek(Duration.zero);
       return;
     }
-    _player.seek(Duration.zero);
+    _engine.player.seek(Duration.zero);
     final index = _getPrevSongIndex();
     if (index != currentIndex) {
       await customAction('playByIndex', {'index': index});
@@ -314,66 +325,25 @@ class MyAudioHandler extends BaseAudioHandler with GetxServiceMixin {
   @override
   Future<void> setShuffleMode(AudioServiceShuffleMode mode) async {
     if (mode == AudioServiceShuffleMode.none) {
-      shuffleModeEnabled = false;
-      shuffledQueue.clear();
+      _queueMgr.disableShuffle();
     } else {
-      _buildShuffledQueue(currentIndex);
-      shuffleModeEnabled = true;
+      _queueMgr.enableShuffle(queue.value, currentIndex);
     }
-    Hive.box('AppPrefs').put('shuffleMode', shuffleModeEnabled);
+    Hive.box('AppPrefs').put('shuffleMode', _queueMgr.shuffleEnabled);
   }
 
   // ── Index helpers ─────────────────────────────────────────────────────────
 
+  // Navigation delegates to QueueManager. QueueManager returns null when
+  // the queue is exhausted; we preserve the legacy "return currentIndex
+  // on exhaustion" contract here because skipToNext/skipToPrevious rely
+  // on the index==currentIndex check to detect that case.
   int _getNextSongIndex() {
-    if (shuffleModeEnabled) {
-      if (currentShuffleIndex + 1 >= shuffledQueue.length) {
-        shuffledQueue.shuffle();
-        currentShuffleIndex = 0;
-      } else {
-        currentShuffleIndex += 1;
-      }
-      return queue.value
-          .indexWhere((i) => i.id == shuffledQueue[currentShuffleIndex]);
-    }
-    if (queue.value.length > currentIndex + 1) return currentIndex + 1;
-    if (queueLoopModeEnabled) return 0;
-    return currentIndex;
+    return _queueMgr.nextIndex(queue.value, currentIndex) ?? currentIndex;
   }
 
   int _getPrevSongIndex() {
-    if (shuffleModeEnabled) {
-      if (currentShuffleIndex - 1 < 0) {
-        shuffledQueue.shuffle();
-        currentShuffleIndex = shuffledQueue.length - 1;
-      } else {
-        currentShuffleIndex -= 1;
-      }
-      return queue.value
-          .indexWhere((i) => i.id == shuffledQueue[currentShuffleIndex]);
-    }
-    if (currentIndex - 1 >= 0) return currentIndex - 1;
-    return currentIndex;
-  }
-
-  void _buildShuffledQueue(int fromIndex) {
-    final ids = queue.value.map((i) => i.id).toList();
-    final current = ids.removeAt(fromIndex);
-    ids.shuffle();
-    ids.insert(0, current);
-    shuffledQueue
-      ..clear()
-      ..addAll(ids);
-    currentShuffleIndex = 0;
-  }
-
-  // ── Loudness normalisation ────────────────────────────────────────────────
-  // Formula: target -5 dBFS → volume = 10^((-5 - loudnessDb) / 20)
-
-  void _normalizeVolume(double loudnessDb) {
-    final diff = -5.0 - loudnessDb;
-    final vol = pow(10.0, diff / 20.0).toDouble().clamp(0.0, 1.0);
-    _player.setVolume(vol);
+    return _queueMgr.prevIndex(queue.value, currentIndex) ?? currentIndex;
   }
 
   // ── Prefetch next song URL ────────────────────────────────────────────────
@@ -437,15 +407,20 @@ class MyAudioHandler extends BaseAudioHandler with GetxServiceMixin {
         final isNewUrl = extras['newUrl'] ?? false;
         final song = queue.value[currentIndex];
 
-        // ── Stop current playback IMMEDIATELY so old song never bleeds ──
-        // This is the key fix: pause + clear BEFORE the async URL fetch.
-        // Without this, just_audio keeps playing the old source while we
-        // await checkNGetUrl(), causing the old song to bleed briefly.
-        await _player.pause();
-        await _playList.clear();
-        currentSongUrl = null;
+        // Set phase BEFORE teardown awaits. _playList.clear() emits
+        // ProcessingState.completed (just_audio treats an emptied
+        // ConcatenatingAudioSource as "all consumed"). If we set phase
+        // after, the canonical track-end listener fires on that spurious
+        // completed and causes a double-advance.
+        _engine.setPhase(PlaybackPhase.loading, reason: 'playByIndex start');
 
-        isSongLoading = true;
+        // ── Stop current playback IMMEDIATELY so old song never bleeds ──
+        // Pause + clear BEFORE the async URL fetch. Without this,
+        // just_audio keeps playing the old source while we await
+        // checkNGetUrl(), causing the old song to bleed briefly.
+        await _engine.player.pause();
+        await _engine.playList.clear();
+        currentSongUrl = null;
         playbackState.add(playbackState.value.copyWith(
           processingState: AudioProcessingState.loading,
           playing: false,
@@ -461,7 +436,8 @@ class MyAudioHandler extends BaseAudioHandler with GetxServiceMixin {
 
         if (!streamInfo.playable) {
           currentSongUrl = null;
-          isSongLoading = false;
+          _engine.setPhase(PlaybackPhase.error,
+              reason: 'playByIndex unplayable');
           Get.find<PlayerController>().notifyError(streamInfo.statusMSG);
           playbackState.add(playbackState.value.copyWith(
             processingState: AudioProcessingState.error,
@@ -471,20 +447,21 @@ class MyAudioHandler extends BaseAudioHandler with GetxServiceMixin {
         }
 
         currentSongUrl = song.extras!['url'] = streamInfo.audio!.url;
-        await _playList.add(_createAudioSource(song));
+        await _engine.playList.add(_engine.createSource(song));
 
-        isSongLoading = false;
+        _engine.setPhase(PlaybackPhase.ready,
+            reason: 'playByIndex source ready');
         playbackState
             .add(playbackState.value.copyWith(queueIndex: currentIndex));
 
-        if (loudnessNormalizationEnabled) {
-          _normalizeVolume(streamInfo.audio!.loudnessDb);
+        if (_engine.loudnessNormalizationEnabled) {
+          _engine.normalizeVolume(streamInfo.audio!.loudnessDb);
         }
 
-        await _player.play();
+        await _engine.player.play();
+        _engine.setPhase(PlaybackPhase.playing,
+            reason: 'playByIndex playing');
 
-        // Reset transition guard so next song-end triggers correctly
-        _isTransitioning = false;
         // Silently prefetch the next song's URL into cache
         _prefetchNext();
         break;
@@ -492,9 +469,10 @@ class MyAudioHandler extends BaseAudioHandler with GetxServiceMixin {
       // ── Load a single song and play immediately ─────────────────────────
       case 'setSourceNPlay':
         final song = extras!['mediaItem'] as MediaItem;
-        isSongLoading = true;
+        _engine.setPhase(PlaybackPhase.loading,
+            reason: 'setSourceNPlay start');
         currentIndex = 0;
-        await _playList.clear();
+        await _engine.playList.clear();
         mediaItem.add(song);
         queue.add([song]);
 
@@ -502,20 +480,24 @@ class MyAudioHandler extends BaseAudioHandler with GetxServiceMixin {
 
         if (!streamInfo.playable) {
           currentSongUrl = null;
-          isSongLoading = false;
+          _engine.setPhase(PlaybackPhase.error,
+              reason: 'setSourceNPlay unplayable');
           Get.find<PlayerController>().notifyError(streamInfo.statusMSG);
           return;
         }
 
         currentSongUrl = song.extras!['url'] = streamInfo.audio!.url;
-        await _playList.add(_createAudioSource(song));
-        isSongLoading = false;
+        await _engine.playList.add(_engine.createSource(song));
+        _engine.setPhase(PlaybackPhase.ready,
+            reason: 'setSourceNPlay source ready');
 
-        if (loudnessNormalizationEnabled) {
-          _normalizeVolume(streamInfo.audio!.loudnessDb);
+        if (_engine.loudnessNormalizationEnabled) {
+          _engine.normalizeVolume(streamInfo.audio!.loudnessDb);
         }
 
-        await _player.play();
+        await _engine.player.play();
+        _engine.setPhase(PlaybackPhase.playing,
+            reason: 'setSourceNPlay playing');
         break;
 
       // ── Reorder queue ───────────────────────────────────────────────────
@@ -538,9 +520,7 @@ class MyAudioHandler extends BaseAudioHandler with GetxServiceMixin {
         final q = queue.value;
         q.insert(currentIndex + 1, song);
         queue.add(q);
-        if (shuffleModeEnabled) {
-          shuffledQueue.insert(currentShuffleIndex + 1, song.id);
-        }
+        _queueMgr.onItemInsertedAfterCurrent(song.id);
         break;
 
       // ── Clear all but current ───────────────────────────────────────────
@@ -550,33 +530,28 @@ class MyAudioHandler extends BaseAudioHandler with GetxServiceMixin {
         final q = queue.value;
         q.removeRange(1, q.length);
         queue.add(q);
-        if (shuffleModeEnabled) {
-          shuffledQueue
-            ..clear()
-            ..add(q.first.id);
-          currentShuffleIndex = 0;
-        }
+        _queueMgr.onClearedExceptCurrent(q.first.id);
         break;
 
       // ── Toggle loudness normalisation ───────────────────────────────────
       case 'toggleLoudnessNormalization':
-        loudnessNormalizationEnabled = extras!['enable'] as bool;
-        Hive.box('AppPrefs')
-            .put('loudnessNormalization', loudnessNormalizationEnabled);
-        if (!loudnessNormalizationEnabled) {
-          _player.setVolume(1.0);
+        _engine.loudnessNormalizationEnabled = extras!['enable'] as bool;
+        Hive.box('AppPrefs').put(
+            'loudnessNormalization', _engine.loudnessNormalizationEnabled);
+        if (!_engine.loudnessNormalizationEnabled) {
+          _engine.player.setVolume(1.0);
         }
         break;
 
       // ── Toggle queue loop ───────────────────────────────────────────────
       case 'toggleQueueLoop':
-        queueLoopModeEnabled = extras!['enable'] as bool;
-        Hive.box('AppPrefs').put('queueLoopMode', queueLoopModeEnabled);
+        _queueMgr.queueLoopEnabled = extras!['enable'] as bool;
+        Hive.box('AppPrefs').put('queueLoopMode', _queueMgr.queueLoopEnabled);
         break;
 
       // ── Set volume (0–100) ──────────────────────────────────────────────
       case 'setVolume':
-        _player.setVolume((extras!['value'] as int) / 100);
+        _engine.player.setVolume((extras!['value'] as int) / 100);
         break;
 
       // ── Restore saved session on app start ─────────────────────────────
@@ -591,28 +566,31 @@ class MyAudioHandler extends BaseAudioHandler with GetxServiceMixin {
         currentIndex = restoreIndex;
         mediaItem.add(items[restoreIndex]);
 
-        isSongLoading = true;
+        _engine.setPhase(PlaybackPhase.loading,
+            reason: 'restoreSession start');
         playbackState.add(playbackState.value.copyWith(
           processingState: AudioProcessingState.loading,
         ));
 
         final restoreStream = await checkNGetUrl(items[restoreIndex].id);
         if (!restoreStream.playable) {
-          isSongLoading = false;
+          _engine.setPhase(PlaybackPhase.error,
+              reason: 'restoreSession unplayable');
           break;
         }
 
         currentSongUrl = items[restoreIndex].extras!['url'] =
             restoreStream.audio!.url;
-        await _playList.clear();
-        await _playList.add(_createAudioSource(items[restoreIndex]));
-        isSongLoading = false;
+        await _engine.playList.clear();
+        await _engine.playList.add(_engine.createSource(items[restoreIndex]));
+        _engine.setPhase(PlaybackPhase.ready,
+            reason: 'restoreSession source ready');
         playbackState.add(playbackState.value.copyWith(
           queueIndex: restoreIndex,
           processingState: AudioProcessingState.ready,
         ));
         // Seek to saved position but don't auto-play — user resumes manually
-        await _player.seek(Duration(milliseconds: posMs));
+        await _engine.player.seek(Duration(milliseconds: posMs));
         _prefetchNext();
         break;
 
@@ -627,23 +605,22 @@ class MyAudioHandler extends BaseAudioHandler with GetxServiceMixin {
           startIndex = 0;
         }
 
-        // Reset shuffle state for ordered playback
-        shuffleModeEnabled = false;
-        shuffledQueue
-          ..clear();
-        currentShuffleIndex = 0;
-        Hive.box('AppPrefs').put('shuffleMode', shuffleModeEnabled);
+        // Set phase BEFORE teardown awaits (see playByIndex for rationale).
+        _engine.setPhase(PlaybackPhase.loading,
+            reason: 'playAllFrom start');
+
+        // Reset queue state for ordered playback (clears shuffle, etc.)
+        _queueMgr.reset();
+        Hive.box('AppPrefs').put('shuffleMode', false);
 
         // Stop current playback and clear audio source list
-        await _player.stop();
-        await _playList.clear();
+        await _engine.player.stop();
+        await _engine.playList.clear();
 
         queue.add(items);
         currentIndex = startIndex;
         final currentItem = items[startIndex];
         mediaItem.add(currentItem);
-
-        isSongLoading = true;
         playbackState.add(playbackState.value.copyWith(
           processingState: AudioProcessingState.loading,
           playing: false,
@@ -652,7 +629,8 @@ class MyAudioHandler extends BaseAudioHandler with GetxServiceMixin {
         final streamInfo = await checkNGetUrl(currentItem.id);
         if (!streamInfo.playable) {
           currentSongUrl = null;
-          isSongLoading = false;
+          _engine.setPhase(PlaybackPhase.error,
+              reason: 'playAllFrom unplayable');
           Get.find<PlayerController>().notifyError(streamInfo.statusMSG);
           playbackState.add(playbackState.value.copyWith(
             processingState: AudioProcessingState.error,
@@ -662,20 +640,22 @@ class MyAudioHandler extends BaseAudioHandler with GetxServiceMixin {
         }
 
         currentSongUrl = currentItem.extras!['url'] = streamInfo.audio!.url;
-        await _playList.add(_createAudioSource(currentItem));
+        await _engine.playList.add(_engine.createSource(currentItem));
 
-        isSongLoading = false;
+        _engine.setPhase(PlaybackPhase.ready,
+            reason: 'playAllFrom source ready');
         playbackState.add(playbackState.value.copyWith(
           queueIndex: currentIndex,
           processingState: AudioProcessingState.ready,
         ));
 
-        if (loudnessNormalizationEnabled) {
-          _normalizeVolume(streamInfo.audio!.loudnessDb);
+        if (_engine.loudnessNormalizationEnabled) {
+          _engine.normalizeVolume(streamInfo.audio!.loudnessDb);
         }
 
-        await _player.play();
-        _isTransitioning = false;
+        await _engine.player.play();
+        _engine.setPhase(PlaybackPhase.playing,
+            reason: 'playAllFrom playing');
         _prefetchNext();
         break;
 
@@ -685,22 +665,21 @@ class MyAudioHandler extends BaseAudioHandler with GetxServiceMixin {
         final shuffleItems = rawShuffleItems.cast<MediaItem>();
         if (shuffleItems.isEmpty) break;
 
-        // This is a one-shot shuffled queue; do not enable global shuffle mode.
-        shuffleModeEnabled = false;
-        shuffledQueue
-          ..clear();
-        currentShuffleIndex = 0;
-        Hive.box('AppPrefs').put('shuffleMode', shuffleModeEnabled);
+        // Set phase BEFORE teardown awaits (see playByIndex for rationale).
+        _engine.setPhase(PlaybackPhase.loading,
+            reason: 'playShuffled start');
 
-        await _player.stop();
-        await _playList.clear();
+        // This is a one-shot shuffled queue; do not enable global shuffle mode.
+        _queueMgr.reset();
+        Hive.box('AppPrefs').put('shuffleMode', false);
+
+        await _engine.player.stop();
+        await _engine.playList.clear();
 
         queue.add(shuffleItems);
         currentIndex = 0;
         final firstItem = shuffleItems.first;
         mediaItem.add(firstItem);
-
-        isSongLoading = true;
         playbackState.add(playbackState.value.copyWith(
           processingState: AudioProcessingState.loading,
           playing: false,
@@ -709,7 +688,8 @@ class MyAudioHandler extends BaseAudioHandler with GetxServiceMixin {
         final shuffleStream = await checkNGetUrl(firstItem.id);
         if (!shuffleStream.playable) {
           currentSongUrl = null;
-          isSongLoading = false;
+          _engine.setPhase(PlaybackPhase.error,
+              reason: 'playShuffled unplayable');
           Get.find<PlayerController>().notifyError(shuffleStream.statusMSG);
           playbackState.add(playbackState.value.copyWith(
             processingState: AudioProcessingState.error,
@@ -719,26 +699,28 @@ class MyAudioHandler extends BaseAudioHandler with GetxServiceMixin {
         }
 
         currentSongUrl = firstItem.extras!['url'] = shuffleStream.audio!.url;
-        await _playList.add(_createAudioSource(firstItem));
+        await _engine.playList.add(_engine.createSource(firstItem));
 
-        isSongLoading = false;
+        _engine.setPhase(PlaybackPhase.ready,
+            reason: 'playShuffled source ready');
         playbackState.add(playbackState.value.copyWith(
           queueIndex: currentIndex,
           processingState: AudioProcessingState.ready,
         ));
 
-        if (loudnessNormalizationEnabled) {
-          _normalizeVolume(shuffleStream.audio!.loudnessDb);
+        if (_engine.loudnessNormalizationEnabled) {
+          _engine.normalizeVolume(shuffleStream.audio!.loudnessDb);
         }
 
-        await _player.play();
-        _isTransitioning = false;
+        await _engine.player.play();
+        _engine.setPhase(PlaybackPhase.playing,
+            reason: 'playShuffled playing');
         _prefetchNext();
         break;
 
       // ── Dispose ─────────────────────────────────────────────────────────
       case 'dispose':
-        await _player.dispose();
+        await _engine.dispose();
         super.stop();
         break;
 

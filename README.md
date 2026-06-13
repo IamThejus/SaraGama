@@ -51,7 +51,11 @@ The architecture is inspired by and mirrors **HarmonyMusic**, a production Flutt
 lib/
 ├── main.dart                        # App entry, Hive init, AudioService init
 ├── services/
-│   ├── audio_handler.dart           # Core engine — BaseAudioHandler, queue, caching
+│   ├── audio_handler.dart           # BaseAudioHandler — queue, customAction bus, caching
+│   ├── playback_engine.dart         # AudioPlayer + playback phase state machine
+│   ├── queue_manager.dart           # Pure-Dart next/prev index + shuffle bookkeeping
+│   ├── autoplay_orchestrator.dart   # Watermark-driven recommendation queue refill
+│   ├── recommendation_service.dart  # Recommendation API client + cache
 │   ├── stream_service.dart          # YouTube stream manifest fetching
 │   ├── background_task.dart         # Isolate wrapper for stream fetching
 │   └── search_service.dart          # Saragama autocomplete API client
@@ -87,7 +91,7 @@ checkNGetUrl()  ← checks Hive URL cache first
                 ↓
             Cache result in Hive SongsUrlCache
         ↓
-_createAudioSource()  ← LockCachingAudioSource (if cache enabled) or plain URI
+PlaybackEngine.createSource()  ← LockCachingAudioSource (if cache enabled) or plain URI
         ↓
 just_audio → ConcatenatingAudioSource → audio output
         ↓
@@ -98,11 +102,14 @@ audio_service → Android media notification + lock screen controls
 
 | Pattern | Usage |
 |---|---|
-| `BaseAudioHandler` | All playback logic lives here, decoupled from UI |
+| `BaseAudioHandler` | audio_service contract + queue, decoupled from UI |
+| `PlaybackEngine` | Owns the `AudioPlayer` and `PlaybackPhase` state machine (idle → loading → playing → ended, etc.) |
+| `QueueManager` | Pure-Dart next/prev index resolution, shuffle order, dedup bookkeeping |
+| `AutoplayOrchestrator` | Watches the queue/playback streams and fetches recommendations before the queue runs out |
 | `customAction()` command bus | Internal IPC — `playByIndex`, `setSourceNPlay`, `reorderQueue`, etc. |
 | `Isolate.run()` | Stream URL fetching never blocks the main thread |
 | GetX `GetxService` + `GetxController` | Dependency injection and reactive state |
-| Hive boxes | `AppPrefs` (settings), `SongsUrlCache` (stream URL cache) |
+| Hive boxes | `AppPrefs` (settings), `SongsUrlCache` (stream URL cache), `LibraryBox`, `CacheBox` |
 | Debounce via `Timer` | 400ms delay before search API is called |
 
 ---
