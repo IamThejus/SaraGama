@@ -17,6 +17,8 @@ import 'library_screen.dart';
 import 'now_playing_screen.dart';
 import 'playlist_screen.dart';
 import 'widgets/mini_player_bar.dart';
+import 'widgets/skeleton.dart';
+import 'widgets/stagger_in.dart';
 
 class PlayerScreen extends StatefulWidget {
   const PlayerScreen({super.key});
@@ -81,12 +83,13 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   void _queue(SearchResult r) {
+    AppHaptics.selection();
     _pc.addToQueue(r.videoId,
         title:     r.title,
         artist:    r.artistLine,
         thumbnail: r.thumbnail,
         duration:  r.durationValue);
-    _snack('Added: ${r.title}');
+    _snack('Added to queue · ${r.title}');
   }
 
   void _snack(String msg) => ScaffoldMessenger.of(context).showSnackBar(
@@ -198,9 +201,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   Widget _homeTab() {
     return Obx(() {
       if (_hc.isLoading.value) {
-        return const Center(
-            child: CircularProgressIndicator(
-                color: Color(0xFFFF3B30), strokeWidth: 2));
+        return const HomeGridSkeleton();
       }
       if (_hc.hasError.value || _hc.homeData.value == null) {
         return _errorState();
@@ -280,6 +281,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
             ),
 
             const SizedBox(height: 20),
+
+            // ── Recently played (personalized) ───────────────────────
+            _recentlyPlayedSection(),
 
             // ── Filter chips ─────────────────────────────────────────
             Padding(
@@ -372,6 +376,82 @@ class _PlayerScreenState extends State<PlayerScreen> {
       );
     });
   }
+
+  Widget _recentlyPlayedSection() {
+    return Obx(() {
+      final recent = _pc.searchHistory;
+      if (recent.isEmpty) return const SizedBox.shrink();
+      final items = recent.take(10).toList();
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            child: Row(children: [
+              Container(
+                width: 3, height: 20,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFF3B30),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Text('RECENTLY PLAYED',
+                  style: GoogleFonts.inter(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white,
+                      letterSpacing: 0.5)),
+            ]),
+          ),
+          SizedBox(
+            height: 168,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              itemCount: items.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 12),
+              itemBuilder: (_, i) => _recentCard(items[i]),
+            ),
+          ),
+          const SizedBox(height: 28),
+        ],
+      );
+    });
+  }
+
+  Widget _recentCard(LibraryTrack t) => GestureDetector(
+        onTap: () { AppHaptics.light(); _playFromHistory(t); },
+        child: SizedBox(
+          width: 124,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: t.thumbnail.isNotEmpty
+                    ? CachedNetworkImage(
+                        imageUrl: t.thumbnail,
+                        width: 124, height: 124, fit: BoxFit.cover,
+                        errorWidget: (_, __, ___) =>
+                            const ThumbPlaceholder(size: 124, radius: 12))
+                    : const ThumbPlaceholder(size: 124, radius: 12),
+              ),
+              const SizedBox(height: 8),
+              Text(t.title,
+                  style: GoogleFonts.inter(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white),
+                  maxLines: 1, overflow: TextOverflow.ellipsis),
+              Text(t.artist,
+                  style: GoogleFonts.inter(
+                      fontSize: 10.5, color: Colors.grey.shade600),
+                  maxLines: 1, overflow: TextOverflow.ellipsis),
+            ],
+          ),
+        ),
+      );
 
   Widget _playlistGrid(List<TrendingPlaylist> list) {
     if (list.isEmpty) {
@@ -590,6 +670,30 @@ class _PlayerScreenState extends State<PlayerScreen> {
               dense: true,
             );
           }),
+          // Offline cache
+          Obx(() {
+            final on = _pc.cacheSongs.value;
+            return ListTile(
+              leading: Icon(
+                  on ? Icons.download_done_rounded : Icons.download_rounded,
+                  color: const Color(0xFFFF3B30), size: 22),
+              title: Text('Save songs offline',
+                  style: GoogleFonts.inter(
+                      fontSize: 14,
+                      color: Colors.white,
+                      fontWeight: FontWeight.w500)),
+              subtitle: Text(
+                  on ? 'Played songs are cached for offline' : 'Off',
+                  style: GoogleFonts.inter(
+                      fontSize: 11, color: Colors.grey.shade600)),
+              trailing: Switch(
+                value: on,
+                onChanged: (_) => _pc.toggleCacheSongs(),
+                activeColor: const Color(0xFFFF3B30),
+              ),
+              dense: true,
+            );
+          }),
           // Clear search history
           ListTile(
             leading: Icon(Icons.history_rounded,
@@ -751,20 +855,20 @@ class _PlayerScreenState extends State<PlayerScreen> {
                             shape: BoxShape.circle),
                       ),
                     Expanded(
-                      child: Text(item.title.toUpperCase(),
+                      child: Text(item.title,
                           style: GoogleFonts.inter(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
                               color: Colors.white,
-                              letterSpacing: 0.3),
+                              letterSpacing: -0.1),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis),
                     ),
                   ]),
                   const SizedBox(height: 3),
-                  Text((item.artist ?? '').toUpperCase(),
+                  Text(item.artist ?? '',
                       style: GoogleFonts.inter(
-                          fontSize: 10,
+                          fontSize: 11,
                           color: Colors.grey.shade500,
                           fontWeight: FontWeight.w500),
                       maxLines: 1,
@@ -867,10 +971,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
         if (q.isEmpty) {
           final history = _pc.searchHistory;
           if (history.isEmpty) {
-            return Center(
-                child: Text('Type to search songs',
-                    style: GoogleFonts.inter(
-                        fontSize: 14, color: Colors.grey.shade600)));
+            return _emptyState(
+              icon: Icons.search_rounded,
+              title: 'Search for music',
+              subtitle: 'Find songs, artists, and more',
+            );
           }
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -910,22 +1015,22 @@ class _PlayerScreenState extends State<PlayerScreen> {
         }
 
         if (loading && results.isEmpty) {
-          return const Center(
-              child: CircularProgressIndicator(
-                  color: Color(0xFFFF3B30), strokeWidth: 2));
+          return const ListSkeleton();
         }
         if (!loading && results.isEmpty) {
-          return Center(
-              child: Text('No results for "$q"',
-                  style: GoogleFonts.inter(
-                      fontSize: 14, color: Colors.grey.shade600)));
+          return _emptyState(
+            icon: Icons.search_off_rounded,
+            title: 'No results',
+            subtitle: 'Nothing found for "$q"',
+          );
         }
         return ListView.separated(
           padding: const EdgeInsets.only(top: 4),
           itemCount: results.length,
           separatorBuilder: (_, __) =>
               Divider(color: Colors.grey.shade900, height: 1, indent: 76),
-          itemBuilder: (_, i) => _searchTile(results[i]),
+          itemBuilder: (_, i) =>
+              StaggerIn(index: i, child: _searchTile(results[i])),
         );
       });
 
@@ -949,18 +1054,18 @@ class _PlayerScreenState extends State<PlayerScreen> {
               child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(t.title.toUpperCase(),
+                    Text(t.title,
                         style: GoogleFonts.inter(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
                             color: Colors.white,
-                            letterSpacing: 0.3),
+                            letterSpacing: -0.1),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis),
                     const SizedBox(height: 3),
-                    Text(t.artist.toUpperCase(),
+                    Text(t.artist,
                         style: GoogleFonts.inter(
-                            fontSize: 10,
+                            fontSize: 11,
                             color: Colors.grey.shade500,
                             fontWeight: FontWeight.w500),
                         maxLines: 1,
@@ -993,18 +1098,18 @@ class _PlayerScreenState extends State<PlayerScreen> {
               child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(r.title.toUpperCase(),
+                    Text(r.title,
                         style: GoogleFonts.inter(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
                             color: Colors.white,
-                            letterSpacing: 0.3),
+                            letterSpacing: -0.1),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis),
                     const SizedBox(height: 3),
-                    Text(r.artistLine.toUpperCase(),
+                    Text(r.artistLine,
                         style: GoogleFonts.inter(
-                            fontSize: 10,
+                            fontSize: 11,
                             color: Colors.grey.shade500,
                             fontWeight: FontWeight.w500),
                         maxLines: 1,
@@ -1031,6 +1136,37 @@ class _PlayerScreenState extends State<PlayerScreen> {
       );
 
   // ── Utilities ─────────────────────────────────────────────────────────────
+
+  Widget _emptyState({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+  }) =>
+      Center(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Container(
+            width: 76,
+            height: 76,
+            decoration: BoxDecoration(
+              color: const Color(0xFF141414),
+              shape: BoxShape.circle,
+              border: Border.all(color: const Color(0xFF222222)),
+            ),
+            child: Icon(icon, size: 34, color: Colors.grey.shade700),
+          ),
+          const SizedBox(height: 16),
+          Text(title,
+              style: GoogleFonts.inter(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.grey.shade400)),
+          const SizedBox(height: 5),
+          Text(subtitle,
+              textAlign: TextAlign.center,
+              style: GoogleFonts.inter(
+                  fontSize: 12.5, color: Colors.grey.shade700)),
+        ]),
+      );
 
   String _fmt(Duration d) {
     final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
