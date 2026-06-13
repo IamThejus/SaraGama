@@ -5,6 +5,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'controllers/lyrics_controller.dart';   // ← ADD THIS
 import 'controllers/player_controller.dart';
 import 'services/audio_handler.dart';
+import 'services/battery_optimization.dart';
 import 'ui/player_screen.dart';
 
 void main() async {
@@ -37,6 +38,14 @@ ever(Get.find<PlayerController>().currentSong, (song) {
 });
 
   runApp(const YTPlayerApp());
+
+  // One-time prompt (Android) to exempt the app from battery optimization,
+  // so Doze doesn't freeze the process / cut network and stall background
+  // playback while the screen is off. Runs after the first frame so the
+  // system dialog appears over a rendered UI.
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    BatteryOptimization.maybePrompt();
+  });
 }
 
 class YTPlayerApp extends StatelessWidget {
