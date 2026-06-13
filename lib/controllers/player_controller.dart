@@ -1,4 +1,5 @@
 // controllers/player_controller.dart
+import 'dart:async';
 import 'package:audio_service/audio_service.dart';
 import 'package:get/get.dart';
 import 'package:hive/hive.dart';
@@ -93,6 +94,11 @@ class PlayerController extends GetxController {
   final cacheSongs         = false.obs;
   final isCurrentSongLiked = false.obs;
   final searchHistory      = <LibraryTrack>[].obs;
+  final volume             = 100.0.obs;
+
+  /// Sleep timer: when set, the time at which playback auto-pauses (null = off).
+  final sleepTimerEnd      = Rxn<DateTime>();
+  Timer? _sleepTimer;
 
   /// Consolidated immutable playback-state snapshot.
   /// Mirrors the individual `Rx<…>` fields above. UI may subscribe to either;
@@ -146,6 +152,7 @@ class PlayerController extends GetxController {
 
     final q = Hive.box('AppPrefs').get('streamingQuality') ?? 1;
     isHighQuality.value = q == 1;
+    cacheSongs.value = Hive.box('AppPrefs').get('cacheSongs') ?? false;
 
     // Watermark-driven autoplay refill. Started AFTER the queue listeners
     // above so its own queue listener sees the same events. The callback
@@ -172,6 +179,7 @@ class PlayerController extends GetxController {
   @override
   void onClose() {
     _autoplay.stop();
+    _sleepTimer?.cancel();
     super.onClose();
   }
 
@@ -210,7 +218,37 @@ class PlayerController extends GetxController {
     Hive.box('AppPrefs').put('streamingQuality', isHighQuality.value ? 1 : 0);
   }
 
+  void toggleCacheSongs() {
+    cacheSongs.value = !cacheSongs.value;
+    Hive.box('AppPrefs').put('cacheSongs', cacheSongs.value);
+  }
+
   void clearQueue() => audioHandler.customAction('clearQueue');
+
+  // ── Volume ────────────────────────────────────────────────────────────────
+
+  void setVolume(double v) {
+    volume.value = v.clamp(0, 100);
+    audioHandler.customAction('setVolume', {'value': volume.value.round()});
+  }
+
+  // ── Sleep timer ───────────────────────────────────────────────────────────
+
+  void setSleepTimer(Duration d) {
+    _sleepTimer?.cancel();
+    sleepTimerEnd.value = DateTime.now().add(d);
+    _sleepTimer = Timer(d, () {
+      pause();
+      sleepTimerEnd.value = null;
+      _sleepTimer = null;
+    });
+  }
+
+  void cancelSleepTimer() {
+    _sleepTimer?.cancel();
+    _sleepTimer = null;
+    sleepTimerEnd.value = null;
+  }
 
   // ── Core play methods ─────────────────────────────────────────────────────
 

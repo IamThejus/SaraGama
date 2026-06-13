@@ -47,3 +47,4 @@ app.*.map.json
 # Claude & .gitignore
 CLAUDE.md
 .gitignore
+.review_shots

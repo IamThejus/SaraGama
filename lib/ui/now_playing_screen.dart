@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:palette_generator/palette_generator.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../controllers/lyrics_controller.dart';
 import '../controllers/player_controller.dart';
@@ -13,6 +15,7 @@ import '../services/library_service.dart';
 import '../services/thumb_util.dart';
 import 'app_theme.dart';
 import 'widgets/lyrics_button.dart';
+import 'widgets/marquee_text.dart';
 
 class NowPlayingScreen extends StatefulWidget {
   const NowPlayingScreen({super.key});
@@ -26,6 +29,13 @@ class _NowPlayingScreenState extends State<NowPlayingScreen>
 
   late final AnimationController _playBtnCtrl;
   late final Animation<double>   _playBtnScale;
+
+  // Drag-down-to-dismiss offset (iOS-style).
+  double _dragOffset = 0;
+
+  // Ambient color pulled from the current artwork (Gravity "dynamic accent").
+  Color _ambient = const Color(0xFF1A1A1A);
+  String _ambientForId = '';
 
   @override
   void initState() {
@@ -41,12 +51,40 @@ class _NowPlayingScreenState extends State<NowPlayingScreen>
     ever(pc.progressBarState, (state) {
       Get.find<LyricsController>().updatePlaybackPosition(state.current);
     });
+    _extractAmbient(pc.currentSong.value);
+    ever(pc.currentSong, _extractAmbient);
   }
 
   @override
   void dispose() {
     _playBtnCtrl.dispose();
     super.dispose();
+  }
+
+  /// Pull a dominant color from the artwork so the screen builds a custom
+  /// ambient environment per track (Gravity "dynamic accent"). Runs async and
+  /// is a no-op when the art for the current song is already resolved.
+  Future<void> _extractAmbient(MediaItem? song) async {
+    if (song == null) return;
+    final raw = song.artUri?.toString() ?? '';
+    if (raw.isEmpty || song.id == _ambientForId) return;
+    _ambientForId = song.id;
+    try {
+      final url = ThumbUtil.upgrade(raw, ThumbnailSize.tile);
+      final palette = await PaletteGenerator.fromImageProvider(
+        CachedNetworkImageProvider(url),
+        size: const Size(120, 120),
+        maximumColorCount: 8,
+      );
+      final picked = palette.vibrantColor?.color ??
+          palette.dominantColor?.color ??
+          palette.mutedColor?.color;
+      if (picked != null && mounted && song.id == _ambientForId) {
+        setState(() => _ambient = picked);
+      }
+    } catch (_) {
+      // Decode/network failure — keep the previous ambient color.
+    }
   }
 
   void _onPlayTap() {
@@ -63,8 +101,42 @@ class _NowPlayingScreenState extends State<NowPlayingScreen>
 
     return Scaffold(
       backgroundColor: AppColors.bg,
-      body: SafeArea(
-        child: Column(children: [
+      body: Stack(children: [
+        // ── Dynamic ambient backdrop (Z0) ────────────────────────────────
+        AnimatedContainer(
+          duration: const Duration(milliseconds: 900),
+          curve: Curves.easeOut,
+          decoration: BoxDecoration(
+            gradient: RadialGradient(
+              center: const Alignment(0, -0.6),
+              radius: 1.1,
+              colors: [
+                _ambient.withOpacity(0.38),
+                _ambient.withOpacity(0.10),
+                AppColors.bg,
+              ],
+              stops: const [0.0, 0.45, 1.0],
+            ),
+          ),
+        ),
+        GestureDetector(
+        onVerticalDragUpdate: (d) {
+          if (d.primaryDelta == null) return;
+          final next = _dragOffset + d.primaryDelta!;
+          setState(() => _dragOffset = next < 0 ? 0 : next);
+        },
+        onVerticalDragEnd: (d) {
+          final v = d.primaryVelocity ?? 0;
+          if (_dragOffset > 140 || v > 700) {
+            Navigator.of(context).pop();
+          } else {
+            setState(() => _dragOffset = 0);
+          }
+        },
+        child: Transform.translate(
+          offset: Offset(0, _dragOffset),
+          child: SafeArea(
+            child: Column(children: [
 
           // ── Top bar ────────────────────────────────────────────────────────
           Padding(
@@ -115,19 +187,27 @@ class _NowPlayingScreenState extends State<NowPlayingScreen>
                   child: Container(decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     boxShadow: [BoxShadow(
-                      color: AppColors.accent.withOpacity(0.2),
-                      blurRadius: 48, spreadRadius: 10,
+                      color: _ambient.withOpacity(0.35),
+                      blurRadius: 60, spreadRadius: 12,
                     )],
                   )),
                 ),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(20),
-                  child: artUrl.isNotEmpty
-                      ? CachedNetworkImage(
-                          imageUrl: artUrl,
-                          width: size, height: size, fit: BoxFit.cover,
-                          errorWidget: (_, __, ___) => _artPlaceholder(size))
-                      : _artPlaceholder(size),
+                Hero(
+                  tag: 'now-playing-art',
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(20),
+                    child: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 450),
+                      switchInCurve: Curves.easeOut,
+                      child: artUrl.isNotEmpty
+                          ? CachedNetworkImage(
+                              key: ValueKey(artUrl),
+                              imageUrl: artUrl,
+                              width: size, height: size, fit: BoxFit.cover,
+                              errorWidget: (_, __, ___) => _artPlaceholder(size))
+                          : _artPlaceholder(size),
+                    ),
+                  ),
                 ),
               ]),
             );
@@ -145,11 +225,11 @@ class _NowPlayingScreenState extends State<NowPlayingScreen>
                 Expanded(child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(song?.title ?? '',
+                      MarqueeText(
+                          text: song?.title ?? '',
                           style: GoogleFonts.inter(
                             fontSize: 22, fontWeight: FontWeight.w800,
-                            color: Colors.white, letterSpacing: -0.3),
-                          maxLines: 1, overflow: TextOverflow.ellipsis),
+                            color: Colors.white, letterSpacing: -0.3)),
                       const SizedBox(height: 4),
                       Text(song?.artist ?? '',
                           style: AppText.subtitle(size: 14),
@@ -288,17 +368,20 @@ class _NowPlayingScreenState extends State<NowPlayingScreen>
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 _bottomAction(icon: Icons.queue_music_rounded, label: 'QUEUE',
-                    onTap: () { AppHaptics.light(); Navigator.of(context).pop(); }),
+                    onTap: () { AppHaptics.light(); _showQueueSheet(context); }),
                 const LyricsButton(),
                 _bottomAction(icon: Icons.share_rounded, label: 'SHARE',
-                    onTap: () => AppHaptics.light()),
+                    onTap: () { AppHaptics.light(); _shareSong(context); }),
               ],
             ),
           ),
 
           const SizedBox(height: 12),
-        ]),
+            ]),
+          ),
+        ),
       ),
+      ]),
     );
   }
 
@@ -339,6 +422,45 @@ class _NowPlayingScreenState extends State<NowPlayingScreen>
             ]),
           ),
           Divider(color: AppColors.border, height: 24),
+          // Volume
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(children: [
+              const Icon(Icons.volume_down_rounded,
+                  color: AppColors.textSecondary, size: 20),
+              Expanded(
+                child: Obx(() => SliderTheme(
+                      data: SliderTheme.of(context).copyWith(
+                        trackHeight: 3,
+                        thumbShape: const RoundSliderThumbShape(
+                            enabledThumbRadius: 6),
+                        activeTrackColor: AppColors.accent,
+                        inactiveTrackColor: AppColors.border,
+                        thumbColor: Colors.white,
+                        overlayShape: SliderComponentShape.noOverlay,
+                      ),
+                      child: Slider(
+                        value: pc.volume.value,
+                        min: 0, max: 100,
+                        onChanged: pc.setVolume,
+                      ),
+                    )),
+              ),
+              const Icon(Icons.volume_up_rounded,
+                  color: AppColors.textSecondary, size: 20),
+            ]),
+          ),
+          // Sleep timer
+          Obx(() {
+            final end = pc.sleepTimerEnd.value;
+            final active = end != null;
+            return _menuTile(
+              Icons.bedtime_rounded,
+              active ? 'Sleep timer on' : 'Sleep timer',
+              () { Navigator.pop(context); _showSleepTimer(context, pc); },
+              iconColor: active ? AppColors.accent : null,
+            );
+          }),
           _menuTile(Icons.playlist_add_rounded, 'Add to playlist', () {
             Navigator.pop(context);
             _showAddToPlaylist(context, pc, song);
@@ -481,6 +603,161 @@ class _NowPlayingScreenState extends State<NowPlayingScreen>
         ]),
       ),
     );
+  }
+
+  // ── Up-next queue sheet ──────────────────────────────────────────────────
+
+  void _showQueueSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.surface,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => DraggableScrollableSheet(
+        initialChildSize: 0.7, minChildSize: 0.4, maxChildSize: 0.92,
+        expand: false,
+        builder: (_, scroll) => Column(children: [
+          const SizedBox(height: 12),
+          const SheetHandle(),
+          const SizedBox(height: 16),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Row(children: [
+              Text('UP NEXT', style: AppText.label()),
+              const Spacer(),
+              GestureDetector(
+                onTap: () { AppHaptics.light(); pc.clearQueue(); Navigator.pop(ctx); },
+                child: Text('CLEAR',
+                    style: AppText.label(color: AppColors.accent)),
+              ),
+            ]),
+          ),
+          Divider(color: AppColors.border, height: 20),
+          Expanded(
+            child: StreamBuilder<List<MediaItem>>(
+              stream: pc.audioHandler.queue,
+              builder: (context, snap) {
+                final queue = snap.data ?? [];
+                if (queue.isEmpty) {
+                  return Center(
+                      child: Text('Queue is empty', style: AppText.subtitle()));
+                }
+                return ReorderableListView.builder(
+                  scrollController: scroll,
+                  padding: const EdgeInsets.only(bottom: 24),
+                  itemCount: queue.length,
+                  onReorder: (o, n) => pc.audioHandler.customAction(
+                      'reorderQueue', {'oldIndex': o, 'newIndex': n}),
+                  itemBuilder: (_, i) {
+                    final item = queue[i];
+                    final cur = pc.currentSong.value?.id == item.id;
+                    return _queueSheetRow(item, i, cur,
+                        key: ValueKey('${item.id}$i'));
+                  },
+                );
+              },
+            ),
+          ),
+        ]),
+      ),
+    );
+  }
+
+  Widget _queueSheetRow(MediaItem item, int index, bool cur,
+      {required Key key}) {
+    final art = item.artUri?.toString() ?? '';
+    return GestureDetector(
+      key: key,
+      behavior: HitTestBehavior.opaque,
+      onTap: () { AppHaptics.light(); pc.audioHandler.skipToQueueItem(index); },
+      child: Container(
+        color: cur ? AppColors.accent.withOpacity(0.06) : Colors.transparent,
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 9),
+        child: Row(children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: art.isNotEmpty
+                ? CachedNetworkImage(
+                    imageUrl: art, width: 44, height: 44, fit: BoxFit.cover,
+                    errorWidget: (_, __, ___) =>
+                        const ThumbPlaceholder(size: 44, radius: 6))
+                : const ThumbPlaceholder(size: 44, radius: 6),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(item.title,
+                      style: AppText.title(
+                          size: 13,
+                          color: cur ? AppColors.accent : Colors.white),
+                      maxLines: 1, overflow: TextOverflow.ellipsis),
+                  const SizedBox(height: 2),
+                  Text(item.artist ?? '',
+                      style: AppText.subtitle(size: 11),
+                      maxLines: 1, overflow: TextOverflow.ellipsis),
+                ]),
+          ),
+          Icon(Icons.drag_handle_rounded,
+              color: AppColors.textMuted, size: 18),
+        ]),
+      ),
+    );
+  }
+
+  // ── Sleep timer ──────────────────────────────────────────────────────────
+
+  void _showSleepTimer(BuildContext context, PlayerController pc) {
+    final options = <String, Duration?>{
+      '15 minutes': const Duration(minutes: 15),
+      '30 minutes': const Duration(minutes: 30),
+      '45 minutes': const Duration(minutes: 45),
+      '1 hour': const Duration(hours: 1),
+    };
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.fromLTRB(0, 12, 0, 28),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const SheetHandle(),
+          const SizedBox(height: 16),
+          Text('Sleep Timer', style: AppText.title(size: 16)),
+          Divider(color: AppColors.border, height: 24),
+          ...options.entries.map((e) => _menuTile(
+                Icons.bedtime_outlined, e.key, () {
+                  pc.setSleepTimer(e.value!);
+                  Navigator.pop(ctx);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                      _snackBar('Playback will stop in ${e.key}'));
+                },
+              )),
+          Obx(() => pc.sleepTimerEnd.value != null
+              ? _menuTile(Icons.close_rounded, 'Turn off timer', () {
+                  pc.cancelSleepTimer();
+                  Navigator.pop(ctx);
+                  ScaffoldMessenger.of(context)
+                      .showSnackBar(_snackBar('Sleep timer cancelled'));
+                }, iconColor: AppColors.accent)
+              : const SizedBox.shrink()),
+        ]),
+      ),
+    );
+  }
+
+  // ── Share ────────────────────────────────────────────────────────────────
+
+  void _shareSong(BuildContext context) {
+    final song = pc.currentSong.value;
+    if (song == null) return;
+    final url = 'https://youtu.be/${song.id}';
+    final artist = (song.artist ?? '').isNotEmpty ? ' by ${song.artist}' : '';
+    Share.share('Listening to ${song.title}$artist on SaraGama\n$url',
+        subject: song.title);
   }
 
   // ── Helpers ────────────────────────────────────────────────────────────────

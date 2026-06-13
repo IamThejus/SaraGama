@@ -62,15 +62,18 @@ class MiniPlayerBar extends StatelessWidget {
                     ),
                     child: Row(children: [
                       // Artwork
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(12),
-                        child: art.isNotEmpty
-                            ? CachedNetworkImage(
-                                imageUrl: art,
-                                width: 46, height: 46, fit: BoxFit.cover,
-                                errorWidget: (_, __, ___) =>
-                                    const ThumbPlaceholder(size: 46, radius: 12))
-                            : const ThumbPlaceholder(size: 46, radius: 12),
+                      Hero(
+                        tag: 'now-playing-art',
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: art.isNotEmpty
+                              ? CachedNetworkImage(
+                                  imageUrl: art,
+                                  width: 46, height: 46, fit: BoxFit.cover,
+                                  errorWidget: (_, __, ___) =>
+                                      const ThumbPlaceholder(size: 46, radius: 12))
+                              : const ThumbPlaceholder(size: 46, radius: 12),
+                        ),
                       ),
                       const SizedBox(width: 12),
                       // Title + Artist

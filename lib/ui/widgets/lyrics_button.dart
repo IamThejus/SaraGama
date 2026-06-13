@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../../controllers/lyrics_controller.dart';
 import '../immersive_lyrics_screen.dart';
 
@@ -44,13 +45,25 @@ class _LyricsButtonState extends State<LyricsButton>
       final loading   = lc.isLoading.value;
 
       return GestureDetector(
-        onTap: available
-            ? () {
-                HapticFeedback.lightImpact();
-                lc.openLyrics();
-                Navigator.of(context).push(_lyricsRoute());
-              }
-            : null,
+        onTap: () {
+          HapticFeedback.lightImpact();
+          if (loading) return;
+          if (!available) {
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text('Lyrics not available for this song',
+                  style: GoogleFonts.inter(
+                      fontSize: 12.5, color: Colors.grey.shade300)),
+              duration: const Duration(seconds: 2),
+              backgroundColor: const Color(0xFF1A1A1A),
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10)),
+            ));
+            return;
+          }
+          lc.openLyrics();
+          Navigator.of(context).push(_lyricsRoute());
+        },
         child: AnimatedOpacity(
           opacity: available ? 1.0 : 0.38,
           duration: const Duration(milliseconds: 300),
